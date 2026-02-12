@@ -1,4 +1,4 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, json } from "drizzle-orm/mysql-core";
 
 /**
  * Core user table backing auth flow.
@@ -25,4 +25,30 @@ export const users = mysqlTable("users", {
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
-// TODO: Add your tables here
+/**
+ * Video analyses table for storing squash game videos and their AI analysis results
+ */
+export const videoAnalyses = mysqlTable("video_analyses", {
+  id: int("id").autoincrement().primaryKey(),
+  /** User who uploaded the video (nullable for anonymous uploads) */
+  userId: int("userId"),
+  /** User-provided title for the video */
+  title: varchar("title", { length: 255 }).notNull(),
+  /** S3 URL of the uploaded video file */
+  videoUrl: varchar("videoUrl", { length: 1024 }).notNull(),
+  /** S3 URL of the video thumbnail (extracted from first frame) */
+  thumbnailUrl: varchar("thumbnailUrl", { length: 1024 }),
+  /** Analysis status: pending, analyzing, complete, failed */
+  status: mysqlEnum("status", ["pending", "analyzing", "complete", "failed"]).default("pending").notNull(),
+  /** AI-generated analysis results stored as JSON */
+  analysisResults: json("analysisResults"),
+  /** Error message if analysis failed */
+  errorMessage: text("errorMessage"),
+  /** Timestamp when the video was uploaded */
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+  /** Timestamp when the analysis was last updated */
+  updatedAt: timestamp("updatedAt").notNull().defaultNow().onUpdateNow(),
+});
+
+export type VideoAnalysis = typeof videoAnalyses.$inferSelect;
+export type InsertVideoAnalysis = typeof videoAnalyses.$inferInsert;

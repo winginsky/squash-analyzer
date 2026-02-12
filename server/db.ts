@@ -1,6 +1,6 @@
-import { eq } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users } from "../drizzle/schema";
+import { InsertUser, users, videoAnalyses, InsertVideoAnalysis, VideoAnalysis } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -89,4 +89,61 @@ export async function getUserByOpenId(openId: string) {
   return result.length > 0 ? result[0] : undefined;
 }
 
-// TODO: add feature queries here as your schema grows.
+/**
+ * Get all video analyses for a user (or all if userId is null for anonymous)
+ */
+export async function getUserVideoAnalyses(userId?: number): Promise<VideoAnalysis[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  if (userId) {
+    return db.select().from(videoAnalyses).where(eq(videoAnalyses.userId, userId)).orderBy(desc(videoAnalyses.createdAt));
+  } else {
+    return db.select().from(videoAnalyses).orderBy(desc(videoAnalyses.createdAt));
+  }
+}
+
+/**
+ * Get a single video analysis by ID
+ */
+export async function getVideoAnalysis(id: number): Promise<VideoAnalysis | null> {
+  const db = await getDb();
+  if (!db) return null;
+
+  const results = await db.select().from(videoAnalyses).where(eq(videoAnalyses.id, id));
+  return results[0] || null;
+}
+
+/**
+ * Create a new video analysis record
+ */
+export async function createVideoAnalysis(data: InsertVideoAnalysis): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const result = await db.insert(videoAnalyses).values(data);
+  return result[0].insertId;
+}
+
+/**
+ * Update video analysis status and results
+ */
+export async function updateVideoAnalysis(
+  id: number,
+  data: Partial<InsertVideoAnalysis>
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  await db.update(videoAnalyses).set(data).where(eq(videoAnalyses.id, id));
+}
+
+/**
+ * Delete a video analysis
+ */
+export async function deleteVideoAnalysis(id: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  await db.delete(videoAnalyses).where(eq(videoAnalyses.id, id));
+}

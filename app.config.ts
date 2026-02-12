@@ -28,11 +28,11 @@ const schemeFromBundleId = `manus${timestamp}`;
 
 const env = {
   // App branding - update these values directly (do not use env vars)
-  appName: "Squash Game Analyzer",
+  appName: "Squash Analyzer",
   appSlug: "squash-analyzer",
   // S3 URL of the app logo - set this to the URL returned by generate_image when creating custom logo
   // Leave empty to use the default icon from assets/images/icon.png
-  logoUrl: "",
+  logoUrl: "https://private-us-east-1.manuscdn.com/sessionFile/9yVzethGdCtC23WItOK9yE/sandbox/rLhOIb45fp2jT1BjbwBtkD-img-1_1770921034000_na1fn_c3F1YXNoLWFwcC1pY29u.png?x-oss-process=image/resize,w_1920,h_1920/format,webp/quality,q_80&Expires=1798761600&Policy=eyJTdGF0ZW1lbnQiOlt7IlJlc291cmNlIjoiaHR0cHM6Ly9wcml2YXRlLXVzLWVhc3QtMS5tYW51c2Nkbi5jb20vc2Vzc2lvbkZpbGUvOXlWemV0aEdkQ3RDMjNXSXRPSzl5RS9zYW5kYm94L3JMaE9JYjQ1ZnAyalQxQmpid0J0a0QtaW1nLTFfMTc3MDkyMTAzNDAwMF9uYTFmbl9jM0YxWVhOb0xXRndjQzFwWTI5dS5wbmc~eC1vc3MtcHJvY2Vzcz1pbWFnZS9yZXNpemUsd18xOTIwLGhfMTkyMC9mb3JtYXQsd2VicC9xdWFsaXR5LHFfODAiLCJDb25kaXRpb24iOnsiRGF0ZUxlc3NUaGFuIjp7IkFXUzpFcG9jaFRpbWUiOjE3OTg3NjE2MDB9fX1dfQ__&Key-Pair-Id=K2HSFNDJXOU9YS&Signature=t3OyOHaiYP6UIo52Zt6LBXPmvLwo8lZjOziv1hmJyTNxA0O4OqLRWZt7NFnF5RYgURs1tjQWrDxVjVRhRxe-xiLV8Yl5GwvMbdmrfPXgg64r9rFNtPI1iERN5BRnt2RXyz-Szzq7UKOgQJ~NlV6Eh4ysW8ilVcoasucNMh0Ygk~llifOvtEAFbp3YvV3V3ndC2LwkG3Xy~-NRycLCxc0wwEvmH-fCBl47yg81lZJlaPplq3L61CnFX~EMXNawHoo0d0Z1-7N4QlS9j9rOv18jE~fXt~r9nKhUWpaA-gfaJDOoRJxB-5NBd6fk3Su9Elr7DHd0L-QZglaZY3yPbLn3g__",
   scheme: schemeFromBundleId,
   iosBundleId: bundleId,
   androidPackage: bundleId,
