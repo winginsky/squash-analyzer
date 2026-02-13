@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { Platform } from "react-native";
 import { trpc } from "@/lib/trpc";
 import { ScrollView, Text, View, TouchableOpacity } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
@@ -94,6 +95,7 @@ export default function VideoDetailScreen() {
 
   return (
     <ScreenContainer edges={["top", "left", "right", "bottom"]}>
+      <View className="max-w-5xl mx-auto w-full flex-1">
       <ScrollView className="flex-1">
         {/* Header */}
         <View className="px-6 pt-4 pb-2 flex-row items-center justify-between">
@@ -118,6 +120,7 @@ export default function VideoDetailScreen() {
               aspectRatio: 16 / 9,
               borderRadius: 16,
               backgroundColor: colors.surface,
+              maxHeight: Platform.OS === "web" ? 600 : undefined,
             }}
             allowsFullscreen
             nativeControls
@@ -206,6 +209,7 @@ export default function VideoDetailScreen() {
           ))}
         </View>
       </ScrollView>
+      </View>
     </ScreenContainer>
   );
 }

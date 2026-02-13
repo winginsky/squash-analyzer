@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
-import { FlatList, Text, View, TouchableOpacity, Pressable, RefreshControl } from "react-native";
+import { FlatList, Text, View, TouchableOpacity, Pressable, RefreshControl, Platform } from "react-native";
 import { router } from "expo-router";
 import * as Haptics from "expo-haptics";
 
@@ -37,12 +37,16 @@ export default function HomeScreen() {
   };
 
   const handleUpload = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (Platform.OS !== "web") {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
     router.push("/upload");
   };
 
   const handleVideoPress = (videoId: string) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (Platform.OS !== "web") {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
     router.push(`/video/${videoId}` as any);
   };
 
@@ -52,7 +56,7 @@ export default function HomeScreen() {
       style={({ pressed }) => ({
         opacity: pressed ? 0.7 : 1,
       })}
-      className="mb-4"
+      className="mb-4 flex-1"
     >
       <View className="bg-surface rounded-2xl p-4 border border-border">
         <View className="flex-row items-center justify-between mb-2">
@@ -118,21 +122,29 @@ export default function HomeScreen() {
 
   return (
     <ScreenContainer>
-      <View className="flex-1">
+      <View className="flex-1 max-w-7xl mx-auto w-full">
         {/* Header */}
         <View className="px-6 pt-4 pb-2 flex-row items-center justify-between">
-          <Text className="text-3xl font-bold text-foreground">
-            My Videos
-          </Text>
+          <View>
+            <Text className="text-3xl font-bold text-foreground">
+              My Videos
+            </Text>
+            <Text className="text-base text-muted mt-1">
+              Upload and analyze your squash games
+            </Text>
+          </View>
           <Pressable
             onPress={handleUpload}
             style={({ pressed }) => ({
-              transform: [{ scale: pressed ? 0.97 : 1 }],
+              transform: Platform.OS !== "web" ? [{ scale: pressed ? 0.97 : 1 }] : undefined,
               opacity: pressed ? 0.9 : 1,
             })}
-            className="bg-primary w-12 h-12 rounded-full items-center justify-center"
+            className="bg-primary px-6 py-3 rounded-full flex-row items-center"
           >
-            <Text className="text-background text-2xl font-bold">+</Text>
+            <Text className="text-background text-xl font-bold mr-2">+</Text>
+            <Text className="text-background font-semibold text-base">
+              Upload Video
+            </Text>
           </Pressable>
         </View>
 
@@ -141,6 +153,9 @@ export default function HomeScreen() {
           data={videos}
           renderItem={renderVideoCard}
           keyExtractor={(item) => item.id}
+          key={Platform.OS === "web" ? "grid" : "list"}
+          numColumns={Platform.OS === "web" ? 2 : 1}
+          columnWrapperStyle={Platform.OS === "web" ? { gap: 16 } : undefined}
           contentContainerStyle={{
             flexGrow: 1,
             paddingHorizontal: 24,

@@ -89,12 +89,18 @@ export default function UploadScreen() {
 
   return (
     <ScreenContainer edges={["top", "left", "right", "bottom"]}>
+      <View className="max-w-3xl mx-auto w-full flex-1">
       <View className="flex-1 p-6">
         {/* Header */}
         <View className="flex-row items-center justify-between mb-6">
-          <Text className="text-3xl font-bold text-foreground">
-            Upload Video
-          </Text>
+          <View>
+            <Text className="text-3xl font-bold text-foreground">
+              Upload Video
+            </Text>
+            <Text className="text-sm text-muted mt-1">
+              Select a squash game video for AI analysis
+            </Text>
+          </View>
           <TouchableOpacity
             onPress={() => router.back()}
             className="w-10 h-10 items-center justify-center"
@@ -186,6 +192,7 @@ export default function UploadScreen() {
             )}
           </TouchableOpacity>
         </View>
+      </View>
       </View>
     </ScreenContainer>
   );

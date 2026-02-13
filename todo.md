@@ -30,3 +30,11 @@
 - [x] Loading states and progress indicators
 - [ ] Error handling and retry logic
 - [x] Haptic feedback on key interactions
+
+## Web/Desktop Conversion
+- [x] Adapt home screen layout for desktop (wider viewport)
+- [x] Update video upload to support web file input
+- [x] Optimize video detail screen for desktop viewing)
+- [x] Add responsive breakpoints for tablet/desktop
+- [x] Remove mobile-only features (haptics) on web
+- [ ] Test video playback on desktop browsers
