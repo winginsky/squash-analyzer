@@ -24,6 +24,21 @@ describe("Video Analysis API", () => {
     expect(typeof videoId).toBe("number");
   });
 
+  it("creates a video analysis with player information", async () => {
+    const videoId = await db.createVideoAnalysis({
+      title: "Player-Specific Analysis",
+      playerName: "John Doe",
+      playerDescription: "Wearing blue shirt, left side",
+      videoUrl: "https://example.com/player-video.mp4",
+      status: "pending",
+    });
+
+    const video = await db.getVideoAnalysis(videoId);
+    expect(video).toBeDefined();
+    expect(video?.playerName).toBe("John Doe");
+    expect(video?.playerDescription).toBe("Wearing blue shirt, left side");
+  });
+
   it("retrieves a video analysis by ID", async () => {
     const video = await db.getVideoAnalysis(testVideoId);
 

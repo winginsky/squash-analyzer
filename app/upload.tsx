@@ -13,6 +13,8 @@ export default function UploadScreen() {
   const colors = useColors();
   const [videoUri, setVideoUri] = useState<string | null>(null);
   const [title, setTitle] = useState("");
+  const [playerName, setPlayerName] = useState("");
+  const [playerDescription, setPlayerDescription] = useState("");
   const [uploading, setUploading] = useState(false);
 
   const player = useVideoPlayer(videoUri || "", (player) => {
@@ -68,6 +70,8 @@ export default function UploadScreen() {
       // Upload to server
       await uploadMutation.mutateAsync({
         title,
+        playerName: playerName || undefined,
+        playerDescription: playerDescription || undefined,
         videoBase64: base64,
         mimeType: "video/mp4",
       });
@@ -144,7 +148,7 @@ export default function UploadScreen() {
         )}
 
         {/* Title Input */}
-        <View className="mb-6">
+        <View className="mb-4">
           <Text className="text-sm font-medium text-foreground mb-2">
             Video Title
           </Text>
@@ -156,6 +160,40 @@ export default function UploadScreen() {
             className="bg-surface border border-border rounded-xl px-4 py-3 text-foreground"
             style={{ fontSize: 16 }}
           />
+        </View>
+
+        {/* Player Information */}
+        <View className="mb-4">
+          <Text className="text-sm font-medium text-foreground mb-2">
+            Player Name (Optional)
+          </Text>
+          <TextInput
+            value={playerName}
+            onChangeText={setPlayerName}
+            placeholder="e.g., John Smith"
+            placeholderTextColor={colors.muted}
+            className="bg-surface border border-border rounded-xl px-4 py-3 text-foreground"
+            style={{ fontSize: 16 }}
+          />
+        </View>
+
+        <View className="mb-6">
+          <Text className="text-sm font-medium text-foreground mb-2">
+            Player Description (Optional)
+          </Text>
+          <TextInput
+            value={playerDescription}
+            onChangeText={setPlayerDescription}
+            placeholder="e.g., Wearing blue shirt, playing on the left side"
+            placeholderTextColor={colors.muted}
+            className="bg-surface border border-border rounded-xl px-4 py-3 text-foreground"
+            style={{ fontSize: 16 }}
+            multiline
+            numberOfLines={2}
+          />
+          <Text className="text-xs text-muted mt-1">
+            Help the AI identify which player to analyze
+          </Text>
         </View>
 
         {/* Actions */}

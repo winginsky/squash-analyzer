@@ -34,6 +34,10 @@ export const videoAnalyses = mysqlTable("video_analyses", {
   userId: int("userId"),
   /** User-provided title for the video */
   title: varchar("title", { length: 255 }).notNull(),
+  /** Name or description of the player being analyzed */
+  playerName: varchar("playerName", { length: 255 }),
+  /** Additional details about the player (position, jersey color, etc.) */
+  playerDescription: text("playerDescription"),
   /** S3 URL of the uploaded video file */
   videoUrl: varchar("videoUrl", { length: 1024 }).notNull(),
   /** S3 URL of the video thumbnail (extracted from first frame) */

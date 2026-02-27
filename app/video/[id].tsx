@@ -112,7 +112,7 @@ export default function VideoDetailScreen() {
         </View>
 
         {/* Video Player */}
-        <View className="px-6 mb-6">
+        <View className="px-6 mb-4">
           <VideoView
             player={player}
             style={{
@@ -126,6 +126,32 @@ export default function VideoDetailScreen() {
             nativeControls
           />
         </View>
+
+        {/* Player Information */}
+        {videoData && (videoData.playerName || videoData.playerDescription) && (
+          <View className="px-6 mb-4">
+            <View className="bg-surface rounded-xl p-4 border border-border">
+              <View className="flex-row items-center mb-2">
+                <View className="w-8 h-8 bg-primary/10 rounded-full items-center justify-center mr-3">
+                  <Text className="text-primary text-base">🎾</Text>
+                </View>
+                <Text className="text-base font-semibold text-foreground">
+                  Analyzing Player
+                </Text>
+              </View>
+              {videoData.playerName && (
+                <Text className="text-foreground font-medium mb-1">
+                  {videoData.playerName}
+                </Text>
+              )}
+              {videoData.playerDescription && (
+                <Text className="text-sm text-muted">
+                  {videoData.playerDescription}
+                </Text>
+              )}
+            </View>
+          </View>
+        )}
 
         {/* Analysis Status */}
         {videoData && (

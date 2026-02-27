@@ -60,9 +60,16 @@ export default function HomeScreen() {
     >
       <View className="bg-surface rounded-2xl p-4 border border-border">
         <View className="flex-row items-center justify-between mb-2">
-          <Text className="text-lg font-semibold text-foreground flex-1">
-            {item.title}
-          </Text>
+          <View className="flex-1">
+            <Text className="text-lg font-semibold text-foreground">
+              {item.title}
+            </Text>
+            {(videosData?.find(v => v.id.toString() === item.id)?.playerName) && (
+              <Text className="text-sm text-muted mt-0.5">
+                Player: {videosData.find(v => v.id.toString() === item.id)?.playerName}
+              </Text>
+            )}
+          </View>
           <View
             className={`px-3 py-1 rounded-full ${
               item.status === "complete"

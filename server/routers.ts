@@ -10,7 +10,7 @@ import { invokeLLM } from "./_core/llm";
 /**
  * Analyze a squash game video using AI vision
  */
-async function analyzeSquashVideo(videoUrl: string) {
+async function analyzeSquashVideo(videoUrl: string, playerName?: string, playerDescription?: string) {
   try {
     const response = await invokeLLM({
       messages: [
@@ -21,6 +21,8 @@ async function analyzeSquashVideo(videoUrl: string) {
 2. Positioning (T-position recovery, court coverage)
 3. Shot Selection (when to use drops, drives, lobs, etc.)
 4. Movement (footwork patterns, efficiency, explosiveness)
+
+${playerName ? `Focus your analysis specifically on the player: ${playerName}${playerDescription ? ` (${playerDescription})` : ''}. Ignore other players in the video.` : ''}
 
 For each suggestion, categorize it as:
 - "success" for things done well
@@ -100,6 +102,8 @@ export const appRouter = router({
       .input(
         z.object({
           title: z.string().min(1).max(255),
+          playerName: z.string().optional(),
+          playerDescription: z.string().optional(),
           videoBase64: z.string(),
           mimeType: z.string().default("video/mp4"),
         })
@@ -123,12 +127,14 @@ export const appRouter = router({
         // Create database record
         const videoId = await db.createVideoAnalysis({
           title: input.title,
+          playerName: input.playerName,
+          playerDescription: input.playerDescription,
           videoUrl,
           status: "pending",
         });
 
         // Start analysis asynchronously (don't await)
-        analyzeSquashVideo(videoUrl)
+        analyzeSquashVideo(videoUrl, input.playerName, input.playerDescription)
           .then(async (results) => {
             await db.updateVideoAnalysis(videoId, {
               status: "complete",

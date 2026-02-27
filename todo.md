@@ -38,3 +38,11 @@
 - [x] Add responsive breakpoints for tablet/desktop
 - [x] Remove mobile-only features (haptics) on web
 - [ ] Test video playback on desktop browsers
+
+## Player Selection Feature
+- [x] Add player name/description field to database schema
+- [x] Update upload API to accept player information
+- [x] Add player input field to upload screen UI
+- [x] Update AI analysis prompt to focus on specified player
+- [x] Display player name on video detail screen
+- [x] Show player info on video cards in list
