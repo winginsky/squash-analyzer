@@ -55,3 +55,4 @@
 - [x] Redesign home screen with inline upload form (no separate upload page)
 - [x] Embed player name/description fields directly on home screen
 - [x] Fix video upload failure error on web (switched to multipart FormData upload, bypasses tRPC body size limit)
+- [x] Fix AI analysis only seeing short clip instead of full video (now extracts 12 evenly-spaced frames via ffmpeg across full duration and sends as images)

@@ -6,46 +6,66 @@ import { publicProcedure, router } from "./_core/trpc";
 import * as db from "./db";
 import { storagePut } from "./storage";
 import { invokeLLM } from "./_core/llm";
+import { extractAndUploadFrames } from "./videoFrames";
 
 /**
  * Analyze a squash game video using AI vision
  */
 export async function analyzeSquashVideoPublic(videoUrl: string, playerName?: string, playerDescription?: string) {
   try {
+    // Extract evenly-spaced frames from the full video so the AI sees the
+    // entire match rather than just the first few seconds.
+    console.log("[analysis] Extracting frames from video:", videoUrl);
+    const frameUrls = await extractAndUploadFrames(videoUrl, 12);
+
+    if (frameUrls.length === 0) {
+      throw new Error("No frames could be extracted from the video");
+    }
+
+    console.log(`[analysis] Sending ${frameUrls.length} frames to AI for analysis`);
+
+    // Build the image content parts — one per extracted frame
+    const imageContentParts = frameUrls.map((url, i) => ([
+      {
+        type: "text" as const,
+        text: `Frame ${i + 1} of ${frameUrls.length} (evenly spaced across full video duration):`,
+      },
+      {
+        type: "image_url" as const,
+        image_url: { url, detail: "auto" as const },
+      },
+    ])).flat();
+
     const response = await invokeLLM({
       messages: [
         {
           role: "system",
-          content: `You are an expert squash coach analyzing game footage. Provide detailed, actionable feedback on:
+          content: `You are an expert squash coach analyzing game footage. You are given ${frameUrls.length} frames extracted evenly across the full video duration, so you have visibility into the entire match.
+
+Provide detailed, actionable feedback on:
 1. Technique (racket preparation, swing mechanics, follow-through)
 2. Positioning (T-position recovery, court coverage)
 3. Shot Selection (when to use drops, drives, lobs, etc.)
 4. Movement (footwork patterns, efficiency, explosiveness)
 
-${playerName ? `Focus your analysis specifically on the player: ${playerName}${playerDescription ? ` (${playerDescription})` : ''}. Ignore other players in the video.` : ''}
+${playerName ? `Focus your analysis specifically on the player: ${playerName}${playerDescription ? ` (${playerDescription})` : ''}. Ignore other players in the video.` : 'Analyze the primary player visible in the footage.'}
 
 For each suggestion, categorize it as:
 - "success" for things done well
 - "warning" for areas that need improvement
 - "error" for critical issues that significantly impact performance
 
-Return your analysis as a JSON array of suggestions with this structure:
+Return your analysis as a JSON object with this structure:
 {"suggestions": [{"category": "technique|positioning|shot-selection|movement", "title": "string", "description": "string", "severity": "success|warning|error"}]}`,
         },
         {
           role: "user",
           content: [
             {
-              type: "text",
-              text: "Analyze this squash game video and provide detailed coaching feedback.",
+              type: "text" as const,
+              text: `Analyze these ${frameUrls.length} frames from a squash game video and provide detailed coaching feedback. These frames are evenly distributed across the full video so they represent the complete match.`,
             },
-            {
-              type: "file_url",
-              file_url: {
-                url: videoUrl,
-                mime_type: "video/mp4",
-              },
-            },
+            ...imageContentParts,
           ],
         },
       ],
