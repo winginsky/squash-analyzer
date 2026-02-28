@@ -49,3 +49,5 @@
 
 ## Bug Fixes
 - [x] Fix video playback on web (replaced expo-video with native HTML5 video element on web)
+- [x] Fix missing upload button on web home screen
+- [x] Ensure upload form with player fields is accessible on web
