@@ -75,6 +75,43 @@ const getCategoryColor = (severity: string) => {
   }
 };
 
+// Web-compatible video player component
+function WebVideoPlayer({ url, colors }: { url: string; colors: any }) {
+  if (!url) {
+    return (
+      <View
+        style={{
+          width: "100%",
+          aspectRatio: 16 / 9,
+          borderRadius: 16,
+          backgroundColor: colors.surface,
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <Text style={{ color: colors.muted }}>No video available</Text>
+      </View>
+    );
+  }
+  // Use native HTML5 video element on web
+  return (
+    <View style={{ width: "100%", borderRadius: 16, overflow: "hidden" }}>
+      {/* @ts-ignore - video is a valid web element */}
+      <video
+        src={url}
+        controls
+        style={{
+          width: "100%",
+          aspectRatio: "16 / 9",
+          maxHeight: 600,
+          display: "block",
+          backgroundColor: colors.surface,
+        }}
+      />
+    </View>
+  );
+}
+
 export default function VideoDetailScreen() {
   const colors = useColors();
   const { id } = useLocalSearchParams();
@@ -89,7 +126,8 @@ export default function VideoDetailScreen() {
     return results.suggestions || MOCK_SUGGESTIONS;
   }, [videoData]);
 
-  const player = useVideoPlayer(videoUrl, (player) => {
+  // Only use expo-video on native platforms
+  const player = useVideoPlayer(Platform.OS !== "web" ? videoUrl : "", (player) => {
     player.loop = false;
   });
 
@@ -113,18 +151,21 @@ export default function VideoDetailScreen() {
 
         {/* Video Player */}
         <View className="px-6 mb-4">
-          <VideoView
-            player={player}
-            style={{
-              width: "100%",
-              aspectRatio: 16 / 9,
-              borderRadius: 16,
-              backgroundColor: colors.surface,
-              maxHeight: Platform.OS === "web" ? 600 : undefined,
-            }}
-            allowsFullscreen
-            nativeControls
-          />
+          {Platform.OS === "web" ? (
+            <WebVideoPlayer url={videoUrl} colors={colors} />
+          ) : (
+            <VideoView
+              player={player}
+              style={{
+                width: "100%",
+                aspectRatio: 16 / 9,
+                borderRadius: 16,
+                backgroundColor: colors.surface,
+              }}
+              allowsFullscreen
+              nativeControls
+            />
+          )}
         </View>
 
         {/* Player Information */}

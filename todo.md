@@ -46,3 +46,6 @@
 - [x] Update AI analysis prompt to focus on specified player
 - [x] Display player name on video detail screen
 - [x] Show player info on video cards in list
+
+## Bug Fixes
+- [x] Fix video playback on web (replaced expo-video with native HTML5 video element on web)

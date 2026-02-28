@@ -116,17 +116,34 @@ export default function UploadScreen() {
         {/* Video Preview */}
         {videoUri ? (
           <View className="mb-6">
-            <VideoView
-              player={player}
-              style={{
-                width: "100%",
-                aspectRatio: 16 / 9,
-                borderRadius: 16,
-                backgroundColor: colors.surface,
-              }}
-              allowsFullscreen
-              nativeControls
-            />
+            {Platform.OS === "web" ? (
+              <View style={{ width: "100%", borderRadius: 16, overflow: "hidden" }}>
+                {/* @ts-ignore - video is a valid web element */}
+                <video
+                  src={videoUri}
+                  controls
+                  style={{
+                    width: "100%",
+                    aspectRatio: "16 / 9",
+                    maxHeight: 400,
+                    display: "block",
+                    backgroundColor: colors.surface,
+                  }}
+                />
+              </View>
+            ) : (
+              <VideoView
+                player={player}
+                style={{
+                  width: "100%",
+                  aspectRatio: 16 / 9,
+                  borderRadius: 16,
+                  backgroundColor: colors.surface,
+                }}
+                allowsFullscreen
+                nativeControls
+              />
+            )}
           </View>
         ) : (
           <TouchableOpacity
