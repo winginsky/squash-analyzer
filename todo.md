@@ -51,3 +51,6 @@
 - [x] Fix video playback on web (replaced expo-video with native HTML5 video element on web)
 - [x] Fix missing upload button on web home screen
 - [x] Ensure upload form with player fields is accessible on web
+- [x] Delete all test videos from database
+- [x] Redesign home screen with inline upload form (no separate upload page)
+- [x] Embed player name/description fields directly on home screen
