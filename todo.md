@@ -54,3 +54,4 @@
 - [x] Delete all test videos from database
 - [x] Redesign home screen with inline upload form (no separate upload page)
 - [x] Embed player name/description fields directly on home screen
+- [x] Fix video upload failure error on web (switched to multipart FormData upload, bypasses tRPC body size limit)

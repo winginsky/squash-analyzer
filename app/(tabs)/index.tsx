@@ -1,5 +1,6 @@
 import { useState, useRef } from "react";
 import { trpc } from "@/lib/trpc";
+import { getApiBaseUrl } from "@/constants/oauth";
 import {
   Text,
   View,
@@ -42,8 +43,6 @@ export default function HomeScreen() {
   const { data: videosData, isLoading, refetch } = trpc.videos.list.useQuery();
   const [refreshing, setRefreshing] = useState(false);
 
-  const uploadMutation = trpc.videos.upload.useMutation();
-
   const videos: VideoAnalysis[] = (videosData || []).map((v) => ({
     id: v.id.toString(),
     title: v.title,
@@ -76,27 +75,34 @@ export default function HomeScreen() {
   const handleUpload = async () => {
     if (!videoUri || !title) return;
     setUploading(true);
-    setUploadProgress("Reading video…");
+    setUploadProgress("Preparing video…");
     try {
+      // Fetch the object URL as a blob (works on web with object URLs)
       const response = await fetch(videoUri);
       const blob = await response.blob();
-      const mimeType = blob.type || "video/mp4";
-      setUploadProgress("Encoding video…");
-      const base64 = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onloadend = () =>
-          resolve((reader.result as string).split(",")[1]);
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-      });
+
       setUploadProgress("Uploading to server…");
-      await uploadMutation.mutateAsync({
-        title,
-        playerName: playerName || undefined,
-        playerDescription: playerDescription || undefined,
-        videoBase64: base64,
-        mimeType,
+
+      // Build multipart FormData — no base64 encoding needed
+      const formData = new FormData();
+      const ext = (blob.type || "video/mp4").split("/")[1] || "mp4";
+      formData.append("video", blob, `video.${ext}`);
+      formData.append("title", title);
+      if (playerName) formData.append("playerName", playerName);
+      if (playerDescription) formData.append("playerDescription", playerDescription);
+
+      const apiBase = getApiBaseUrl();
+      const res = await fetch(`${apiBase}/api/upload-video`, {
+        method: "POST",
+        body: formData,
+        credentials: "include",
       });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Server error ${res.status}: ${errText}`);
+      }
+
       // Reset form
       setVideoUri(null);
       setVideoFileName("");

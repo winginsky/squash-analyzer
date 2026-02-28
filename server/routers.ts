@@ -10,7 +10,7 @@ import { invokeLLM } from "./_core/llm";
 /**
  * Analyze a squash game video using AI vision
  */
-async function analyzeSquashVideo(videoUrl: string, playerName?: string, playerDescription?: string) {
+export async function analyzeSquashVideoPublic(videoUrl: string, playerName?: string, playerDescription?: string) {
   try {
     const response = await invokeLLM({
       messages: [
@@ -134,14 +134,14 @@ export const appRouter = router({
         });
 
         // Start analysis asynchronously (don't await)
-        analyzeSquashVideo(videoUrl, input.playerName, input.playerDescription)
-          .then(async (results) => {
+        analyzeSquashVideoPublic(videoUrl, input.playerName, input.playerDescription)
+          .then(async (results: { suggestions: unknown[] }) => {
             await db.updateVideoAnalysis(videoId, {
               status: "complete",
               analysisResults: results,
             });
           })
-          .catch(async (error) => {
+          .catch(async (error: Error) => {
             await db.updateVideoAnalysis(videoId, {
               status: "failed",
               errorMessage: error.message,
