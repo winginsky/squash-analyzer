@@ -63,3 +63,10 @@
 - [x] Update analysis pipeline to attach the matching frame URL to each suggestion
 - [x] Update video detail UI to show frame snapshot inline with each suggestion card (collapsible)
 - [x] Add timestamp label below each frame snapshot (e.g. "at 0:45")
+
+## Inline Clip Player per Suggestion
+- [x] Add "▶ Show Example" button to each suggestion card
+- [x] Build inline video player that seeks to the suggestion timestamp
+- [x] Auto-pause after ~10 seconds to show just the relevant clip
+- [x] Show timestamp label and frame image as poster/thumbnail
+- [ ] Update skill reference files with the new pattern (pending)

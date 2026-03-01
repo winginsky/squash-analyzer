@@ -1,0 +1,20 @@
+{
+  "query": "SELECT id, title, status FROM video_analyses ORDER BY id DESC LIMIT 3;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user QwrFpHdig3uztGQ.root --database ENhuhCf7SLWoUcgY9QEkFN --execute SELECT id, title, status FROM video_analyses ORDER BY id DESC LIMIT 3;",
+  "rows": [
+    {
+      "id": "90001",
+      "title": "Squash Game 3/1/2026",
+      "status": "complete"
+    },
+    {
+      "id": "60002",
+      "title": "Squash Game 2/27/2026",
+      "status": "complete"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\ttitle\tstatus\n90001\tSquash Game 3/1/2026\tcomplete\n60002\tSquash Game 2/27/2026\tcomplete\n",
+  "stderr": "",
+  "execution_time_ms": 348
+}

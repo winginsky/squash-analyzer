@@ -1,7 +1,7 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { Platform } from "react-native";
 import { trpc } from "@/lib/trpc";
-import { ScrollView, Text, View, TouchableOpacity, Image } from "react-native";
+import { ScrollView, Text, View, TouchableOpacity } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { VideoView, useVideoPlayer } from "expo-video";
 
@@ -14,11 +14,8 @@ type Suggestion = {
   title: string;
   description: string;
   severity: "success" | "warning" | "error";
-  /** S3 URL of the frame that best illustrates this suggestion */
   frameUrl?: string | null;
-  /** Human-readable timestamp string, e.g. "1:15" */
   frameTimestamp?: string | null;
-  /** Timestamp in seconds for seeking the video */
   frameTimestampSec?: number | null;
 };
 
@@ -50,58 +47,84 @@ const getSeverityLabel = (severity: string) => {
   }
 };
 
-// Web-compatible video player component
-function WebVideoPlayer({ url, colors }: { url: string; colors: ReturnType<typeof useColors> }) {
-  if (!url) {
-    return (
-      <View style={{ width: "100%", aspectRatio: 16 / 9, borderRadius: 16, backgroundColor: colors.surface, alignItems: "center", justifyContent: "center" }}>
-        <Text style={{ color: colors.muted }}>No video available</Text>
-      </View>
-    );
-  }
-  return (
-    <View style={{ width: "100%", borderRadius: 16, overflow: "hidden" }}>
-      {/* @ts-ignore */}
-      <video
-        src={url}
-        controls
-        style={{ width: "100%", aspectRatio: "16 / 9", maxHeight: 600, display: "block", backgroundColor: colors.surface }}
-      />
-    </View>
-  );
-}
+const CLIP_DURATION = 10; // seconds to play per suggestion clip
 
-/** Inline frame snapshot shown below each suggestion description */
-function FrameSnapshot({ frameUrl, frameTimestamp, colors }: {
-  frameUrl: string;
-  frameTimestamp: string | null | undefined;
+// ─── Web clip player ──────────────────────────────────────────────────────────
+function WebClipPlayer({
+  videoUrl,
+  startSec,
+  frameTimestamp,
+  colors,
+}: {
+  videoUrl: string;
+  startSec: number;
+  frameTimestamp?: string | null;
   colors: ReturnType<typeof useColors>;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const [open, setOpen] = useState(false);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const stopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleToggle = useCallback(() => {
+    if (!open) {
+      setOpen(true);
+      // Give the element time to mount, then seek + play
+      setTimeout(() => {
+        const el = videoRef.current;
+        if (!el) return;
+        el.currentTime = startSec;
+        el.play().catch(() => {});
+        // Auto-pause after CLIP_DURATION seconds
+        if (stopTimerRef.current) clearTimeout(stopTimerRef.current);
+        stopTimerRef.current = setTimeout(() => {
+          el.pause();
+        }, CLIP_DURATION * 1000);
+      }, 80);
+    } else {
+      // Collapse: pause and hide
+      const el = videoRef.current;
+      if (el) el.pause();
+      if (stopTimerRef.current) clearTimeout(stopTimerRef.current);
+      setOpen(false);
+    }
+  }, [open, startSec]);
+
+  // Cleanup on unmount
+  useEffect(() => () => {
+    if (stopTimerRef.current) clearTimeout(stopTimerRef.current);
+  }, []);
 
   return (
     <View style={{ marginTop: 12, borderRadius: 10, overflow: "hidden", borderWidth: 1, borderColor: colors.border }}>
-      {/* Collapsed header — tap to expand */}
+      {/* Toggle button */}
       <TouchableOpacity
-        onPress={() => setExpanded((v) => !v)}
+        onPress={handleToggle}
         style={{ flexDirection: "row", alignItems: "center", padding: 10, backgroundColor: colors.surface }}
       >
-        <Text style={{ fontSize: 14, marginRight: 6 }}>📸</Text>
+        <Text style={{ fontSize: 14, marginRight: 6 }}>{open ? "⏸" : "▶️"}</Text>
         <Text style={{ fontSize: 13, color: colors.foreground, fontWeight: "600", flex: 1 }}>
-          Example frame{frameTimestamp ? ` — at ${frameTimestamp}` : ""}
+          {open ? "Playing clip" : "Show example clip"}{frameTimestamp ? ` — at ${frameTimestamp}` : ""}
         </Text>
-        <Text style={{ fontSize: 13, color: colors.muted }}>{expanded ? "▲ Hide" : "▼ Show"}</Text>
+        <Text style={{ fontSize: 12, color: colors.muted }}>{open ? "▲ Hide" : "▼ Show"}</Text>
       </TouchableOpacity>
 
-      {expanded && (
+      {/* Inline video — always mounted when open so ref is valid */}
+      {open && (
         <View style={{ backgroundColor: "#000" }}>
-          <Image
-            source={{ uri: frameUrl }}
-            style={{ width: "100%", aspectRatio: 16 / 9 }}
-            resizeMode="contain"
+          {/* @ts-ignore */}
+          <video
+            ref={videoRef}
+            src={videoUrl}
+            controls
+            playsInline
+            style={{ width: "100%", aspectRatio: "16 / 9", display: "block", backgroundColor: "#000" }}
           />
           {frameTimestamp && (
-            <View style={{ position: "absolute", bottom: 8, right: 8, backgroundColor: "rgba(0,0,0,0.65)", borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 }}>
+            <View style={{
+              position: "absolute", bottom: 8, right: 8,
+              backgroundColor: "rgba(0,0,0,0.65)", borderRadius: 6,
+              paddingHorizontal: 8, paddingVertical: 3,
+            }}>
               <Text style={{ color: "#fff", fontSize: 12, fontWeight: "600" }}>⏱ {frameTimestamp}</Text>
             </View>
           )}
@@ -111,6 +134,97 @@ function FrameSnapshot({ frameUrl, frameTimestamp, colors }: {
   );
 }
 
+// ─── Native clip player (expo-video) ─────────────────────────────────────────
+function NativeClipPlayer({
+  videoUrl,
+  startSec,
+  frameTimestamp,
+  colors,
+}: {
+  videoUrl: string;
+  startSec: number;
+  frameTimestamp?: string | null;
+  colors: ReturnType<typeof useColors>;
+}) {
+  const [open, setOpen] = useState(false);
+  const stopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const player = useVideoPlayer(open ? videoUrl : "", (p) => {
+    p.loop = false;
+  });
+
+  const handleToggle = useCallback(() => {
+    if (!open) {
+      setOpen(true);
+      setTimeout(() => {
+        try {
+          player.currentTime = startSec;
+          player.play();
+          if (stopTimerRef.current) clearTimeout(stopTimerRef.current);
+          stopTimerRef.current = setTimeout(() => {
+            try { player.pause(); } catch { /* ignore */ }
+          }, CLIP_DURATION * 1000);
+        } catch { /* ignore */ }
+      }, 200);
+    } else {
+      try { player.pause(); } catch { /* ignore */ }
+      if (stopTimerRef.current) clearTimeout(stopTimerRef.current);
+      setOpen(false);
+    }
+  }, [open, player, startSec]);
+
+  useEffect(() => () => {
+    if (stopTimerRef.current) clearTimeout(stopTimerRef.current);
+  }, []);
+
+  return (
+    <View style={{ marginTop: 12, borderRadius: 10, overflow: "hidden", borderWidth: 1, borderColor: colors.border }}>
+      <TouchableOpacity
+        onPress={handleToggle}
+        style={{ flexDirection: "row", alignItems: "center", padding: 10, backgroundColor: colors.surface }}
+      >
+        <Text style={{ fontSize: 14, marginRight: 6 }}>{open ? "⏸" : "▶️"}</Text>
+        <Text style={{ fontSize: 13, color: colors.foreground, fontWeight: "600", flex: 1 }}>
+          {open ? "Playing clip" : "Show example clip"}{frameTimestamp ? ` — at ${frameTimestamp}` : ""}
+        </Text>
+        <Text style={{ fontSize: 12, color: colors.muted }}>{open ? "▲ Hide" : "▼ Show"}</Text>
+      </TouchableOpacity>
+
+      {open && (
+        <View style={{ backgroundColor: "#000", position: "relative" }}>
+          <VideoView
+            player={player}
+            style={{ width: "100%", aspectRatio: 16 / 9 }}
+            allowsFullscreen
+            nativeControls
+          />
+          {frameTimestamp && (
+            <View style={{
+              position: "absolute", bottom: 8, right: 8,
+              backgroundColor: "rgba(0,0,0,0.65)", borderRadius: 6,
+              paddingHorizontal: 8, paddingVertical: 3,
+            }}>
+              <Text style={{ color: "#fff", fontSize: 12, fontWeight: "600" }}>⏱ {frameTimestamp}</Text>
+            </View>
+          )}
+        </View>
+      )}
+    </View>
+  );
+}
+
+// ─── Platform-aware clip player ───────────────────────────────────────────────
+function ClipPlayer(props: {
+  videoUrl: string;
+  startSec: number;
+  frameTimestamp?: string | null;
+  colors: ReturnType<typeof useColors>;
+}) {
+  if (Platform.OS === "web") return <WebClipPlayer {...props} />;
+  return <NativeClipPlayer {...props} />;
+}
+
+// ─── Main screen ──────────────────────────────────────────────────────────────
 export default function VideoDetailScreen() {
   const colors = useColors();
   const { id } = useLocalSearchParams();
@@ -118,7 +232,7 @@ export default function VideoDetailScreen() {
 
   const { data: videoData, isLoading, refetch } = trpc.videos.get.useQuery({ id: videoId });
 
-  // Auto-refresh while analysis is still in progress
+  // Auto-refresh while analysis is in progress
   useEffect(() => {
     if (videoData?.status === "analyzing" || videoData?.status === "pending") {
       const timer = setInterval(() => refetch(), 5000);
@@ -133,8 +247,8 @@ export default function VideoDetailScreen() {
     return results.suggestions || [];
   }, [videoData]);
 
-  // Only use expo-video on native platforms
-  const player = useVideoPlayer(Platform.OS !== "web" ? videoUrl : "", (p) => {
+  // Native main player (only initialised on native)
+  const mainPlayer = useVideoPlayer(Platform.OS !== "web" ? videoUrl : "", (p) => {
     p.loop = false;
   });
 
@@ -153,13 +267,20 @@ export default function VideoDetailScreen() {
             <View className="w-10" />
           </View>
 
-          {/* Video Player */}
+          {/* Main Video Player */}
           <View className="px-6 mb-4">
             {Platform.OS === "web" ? (
-              <WebVideoPlayer url={videoUrl} colors={colors} />
+              <View style={{ width: "100%", borderRadius: 16, overflow: "hidden" }}>
+                {/* @ts-ignore */}
+                <video
+                  src={videoUrl}
+                  controls
+                  style={{ width: "100%", aspectRatio: "16 / 9", maxHeight: 600, display: "block", backgroundColor: colors.surface }}
+                />
+              </View>
             ) : (
               <VideoView
-                player={player}
+                player={mainPlayer}
                 style={{ width: "100%", aspectRatio: 16 / 9, borderRadius: 16, backgroundColor: colors.surface }}
                 allowsFullscreen
                 nativeControls
@@ -226,7 +347,7 @@ export default function VideoDetailScreen() {
             </View>
           )}
 
-          {/* Loading skeleton */}
+          {/* Loading */}
           {isLoading && (
             <View className="px-6 pb-6">
               <Text className="text-muted text-center">Loading analysis…</Text>
@@ -238,11 +359,12 @@ export default function VideoDetailScreen() {
             <View className="px-6 pb-8">
               <Text className="text-2xl font-bold text-foreground mb-1">AI Coaching Suggestions</Text>
               <Text className="text-sm text-muted mb-5">
-                Tap "Show" on any suggestion to see the video frame that illustrates it.
+                Tap "Show example clip" on any suggestion to jump to that moment in the video.
               </Text>
 
               {suggestions.map((suggestion, idx) => {
                 const style = getSeverityStyle(suggestion.severity);
+                const hasSec = suggestion.frameTimestampSec != null;
                 return (
                   <View
                     key={suggestion.id ?? idx}
@@ -263,7 +385,6 @@ export default function VideoDetailScreen() {
                       <Text style={{ fontSize: 16, fontWeight: "700", color: colors.foreground, flex: 1 }}>
                         {suggestion.title}
                       </Text>
-                      {/* Severity badge */}
                       <View style={{ backgroundColor: style.badge, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 3, marginLeft: 8 }}>
                         <Text style={{ color: style.badgeText, fontSize: 11, fontWeight: "700" }}>
                           {getSeverityLabel(suggestion.severity)}
@@ -281,14 +402,19 @@ export default function VideoDetailScreen() {
                       {suggestion.category.replace("-", " ")}
                     </Text>
 
-                    {/* Frame snapshot — collapsible */}
-                    {suggestion.frameUrl && (
-                      <FrameSnapshot
-                        frameUrl={suggestion.frameUrl}
+                    {/* Inline clip player */}
+                    {hasSec && videoUrl ? (
+                      <ClipPlayer
+                        videoUrl={videoUrl}
+                        startSec={suggestion.frameTimestampSec!}
                         frameTimestamp={suggestion.frameTimestamp}
                         colors={colors}
                       />
-                    )}
+                    ) : suggestion.frameTimestamp ? (
+                      <View style={{ marginTop: 10, flexDirection: "row", alignItems: "center" }}>
+                        <Text style={{ fontSize: 12, color: colors.muted }}>⏱ Occurs at {suggestion.frameTimestamp}</Text>
+                      </View>
+                    ) : null}
                   </View>
                 );
               })}

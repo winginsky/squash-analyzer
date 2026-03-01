@@ -1,0 +1,8 @@
+{
+  "query": "SELECT id, title, status, jsonb_array_length((analysis_results->'suggestions')::jsonb) as suggestion_count, (analysis_results->'suggestions'->0->>'frameTimestampSec') as first_frame_sec, (analysis_results->'suggestions'->0->>'frameTimestamp') as first_frame_ts FROM video_analyses ORDER BY created_at DESC LIMIT 3;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user QwrFpHdig3uztGQ.root --database ENhuhCf7SLWoUcgY9QEkFN --execute SELECT id, title, status, jsonb_array_length((analysis_results->'suggestions')::jsonb) as suggestion_count, (analysis_results->'suggestions'->0->>'frameTimestampSec') as first_frame_sec, (analysis_results->'suggestions'->0->>'frameTimestamp') as first_frame_ts FROM video_analyses ORDER BY created_at DESC LIMIT 3;",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1064 (42000) at line 1: You have an error in your SQL syntax; check the manual that corresponds to your TiDB version for the right syntax to use line 1 column 79 near \"::jsonb) as suggestion_count, (analysis_results->'suggestions'->0->>'frameTimestampSec') as first_frame_sec, (analysis_results->'suggestions'->0->>'frameTimestamp') as first_frame_ts FROM video_analyses ORDER BY created_at DESC LIMIT 3\""
+  ]
+}
