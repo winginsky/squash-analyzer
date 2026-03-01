@@ -8,6 +8,67 @@ import { VideoView, useVideoPlayer } from "expo-video";
 import { ScreenContainer } from "@/components/screen-container";
 import { useColors } from "@/hooks/use-colors";
 
+// ─── Frame reference link parser ─────────────────────────────────────────────
+// Matches patterns like: "frame 6", "Frame 6", "(frame 6)", "(frame 6, ...)"
+const FRAME_REF_REGEX = /\(?[Ff]rame\s+(\d+)(?:[^)]*)?\)?/g;
+
+/**
+ * Splits a description string into plain text segments and frame-reference
+ * segments. Frame references are rendered as tappable highlighted links.
+ */
+function DescriptionWithFrameLinks({
+  text,
+  frames,
+  onFrameTap,
+  colors,
+}: {
+  text: string;
+  frames: Array<{ timestampSec: number; url: string }>;
+  onFrameTap: (timestampSec: number) => void;
+  colors: ReturnType<typeof useColors>;
+}) {
+  const parts: Array<{ type: "text" | "link"; content: string; frameIndex: number; timestampSec: number }> = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  const regex = new RegExp(FRAME_REF_REGEX.source, "g");
+
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push({ type: "text", content: text.slice(lastIndex, match.index), frameIndex: -1, timestampSec: -1 });
+    }
+    const frameNum = parseInt(match[1], 10);
+    const frameIdx = Math.max(0, Math.min(frameNum - 1, frames.length - 1));
+    const ts = frames[frameIdx]?.timestampSec ?? -1;
+    parts.push({ type: "link", content: match[0], frameIndex: frameIdx, timestampSec: ts });
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < text.length) {
+    parts.push({ type: "text", content: text.slice(lastIndex), frameIndex: -1, timestampSec: -1 });
+  }
+
+  return (
+    <Text style={{ fontSize: 14, color: colors.muted, lineHeight: 21 }}>
+      {parts.map((part, i) =>
+        part.type === "link" && part.timestampSec >= 0 ? (
+          <Text
+            key={i}
+            onPress={() => onFrameTap(part.timestampSec)}
+            style={{
+              color: colors.primary,
+              textDecorationLine: "underline",
+              fontWeight: "600",
+            }}
+          >
+            {part.content}
+          </Text>
+        ) : (
+          <Text key={i}>{part.content}</Text>
+        )
+      )}
+    </Text>
+  );
+}
+
 type Suggestion = {
   id?: string;
   category: "technique" | "positioning" | "shot-selection" | "movement";
@@ -262,15 +323,47 @@ export default function VideoDetailScreen() {
     return results.suggestions || [];
   }, [videoData]);
 
-  // Native main player (only initialised on native)
+  // Ref to the main web <video> element for seeking
+  const mainVideoRef = useRef<HTMLVideoElement | null>(null);
+  const scrollViewRef = useRef<ScrollView | null>(null);
+
+  // Build a flat frames array from all suggestions for timestamp lookup
+  const allFrames = useMemo(() => {
+    return suggestions
+      .filter((s) => s.frameTimestampSec != null)
+      .map((s) => ({ timestampSec: s.frameTimestampSec!, url: s.frameUrl ?? "" }))
+      // Deduplicate by timestampSec and sort ascending
+      .filter((f, i, arr) => arr.findIndex((x) => x.timestampSec === f.timestampSec) === i)
+      .sort((a, b) => a.timestampSec - b.timestampSec);
+  }, [suggestions]);
+
+  // Native main player (only initialised on native — must be declared before seekMainVideo)
   const mainPlayer = useVideoPlayer(Platform.OS !== "web" ? videoUrl : "", (p) => {
     p.loop = false;
   });
 
+  // Seek the main video player to a given timestamp and scroll to top
+  const seekMainVideo = useCallback((timestampSec: number) => {
+    if (Platform.OS === "web") {
+      const el = mainVideoRef.current;
+      if (el) {
+        el.currentTime = timestampSec;
+        el.play().catch(() => {});
+      }
+    } else {
+      try {
+        mainPlayer.currentTime = timestampSec;
+        mainPlayer.play();
+      } catch { /* ignore */ }
+    }
+    // Scroll back to top so the user sees the main video start playing
+    scrollViewRef.current?.scrollTo({ y: 0, animated: true });
+  }, [mainPlayer]);
+
   return (
     <ScreenContainer edges={["top", "left", "right", "bottom"]}>
       <View className="max-w-5xl mx-auto w-full flex-1">
-        <ScrollView className="flex-1">
+        <ScrollView className="flex-1" ref={scrollViewRef}>
           {/* Header */}
           <View className="px-6 pt-4 pb-2 flex-row items-center justify-between">
             <TouchableOpacity onPress={() => router.back()} className="w-10 h-10 items-center justify-center -ml-2">
@@ -301,7 +394,8 @@ export default function VideoDetailScreen() {
               <View style={{ width: "100%", borderRadius: 16, overflow: "hidden" }}>
                 {/* @ts-ignore */}
                 <video
-                  src={videoUrl}
+                  ref={mainVideoRef}
+                  src={videoUrl || undefined}
                   controls
                   style={{ width: "100%", aspectRatio: "16 / 9", maxHeight: 600, display: "block", backgroundColor: colors.surface }}
                 />
@@ -411,7 +505,7 @@ export default function VideoDetailScreen() {
             <View className="px-6 pb-8">
               <Text className="text-2xl font-bold text-foreground mb-1">AI Coaching Suggestions</Text>
               <Text className="text-sm text-muted mb-5">
-                Tap "Show example clip" on any suggestion to jump to that moment in the video.
+                Tap a <Text style={{ color: colors.primary, fontWeight: "600" }}>frame reference</Text> in any suggestion to jump to that moment, or tap "Show example clip" for a short preview.
               </Text>
 
               {suggestions.map((suggestion, idx) => {
@@ -444,10 +538,13 @@ export default function VideoDetailScreen() {
                       </View>
                     </View>
 
-                    {/* Description */}
-                    <Text style={{ fontSize: 14, color: colors.muted, lineHeight: 21 }}>
-                      {suggestion.description}
-                    </Text>
+                    {/* Description — frame references are clickable links */}
+                    <DescriptionWithFrameLinks
+                      text={suggestion.description}
+                      frames={allFrames}
+                      onFrameTap={seekMainVideo}
+                      colors={colors}
+                    />
 
                     {/* Category label */}
                     <Text style={{ fontSize: 11, fontWeight: "600", color: colors.muted, textTransform: "uppercase", marginTop: 8, letterSpacing: 0.5 }}>

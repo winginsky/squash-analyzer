@@ -77,3 +77,10 @@
 - [x] Add Re-analyze button to video detail screen header (🔄 icon top-right + inline in status banner)
 - [x] Show loading/disabled state while analysis is in progress (⏳ icon, button disabled)
 - [x] Refresh suggestion cards automatically after re-analysis completes (auto-poll every 5s)
+
+## Clickable Frame References in Suggestion Text
+- [x] Parse suggestion description text for "frame N" / "(frame N, ...)" patterns
+- [x] Render matched frame references as tappable inline links (highlighted text)
+- [x] On tap, seek main video player to the timestamp of that frame number
+- [x] Highlight the link in primary color with underline to signal interactivity
+- [x] Scroll main video into view when a frame link is tapped
