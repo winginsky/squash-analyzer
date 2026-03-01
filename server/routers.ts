@@ -195,6 +195,43 @@ export const appRouter = router({
       }),
 
     /**
+     * Re-run AI analysis on an existing uploaded video
+     */
+    reanalyze: publicProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        // Fetch the existing record to get the videoUrl and player info
+        const existing = await db.getVideoAnalysis(input.id);
+        if (!existing) {
+          throw new Error("Video not found");
+        }
+
+        // Reset status to analyzing and clear old results
+        await db.updateVideoAnalysis(input.id, {
+          status: "analyzing",
+          analysisResults: null,
+          errorMessage: null,
+        });
+
+        // Re-run analysis asynchronously
+        analyzeSquashVideoPublic(existing.videoUrl, existing.playerName ?? undefined, existing.playerDescription ?? undefined)
+          .then(async (results: { suggestions: unknown[] }) => {
+            await db.updateVideoAnalysis(input.id, {
+              status: "complete",
+              analysisResults: results,
+            });
+          })
+          .catch(async (error: Error) => {
+            await db.updateVideoAnalysis(input.id, {
+              status: "failed",
+              errorMessage: error.message,
+            });
+          });
+
+        return { success: true, status: "analyzing" };
+      }),
+
+    /**
      * Delete a video analysis
      */
     delete: publicProcedure

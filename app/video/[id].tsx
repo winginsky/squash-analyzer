@@ -231,14 +231,29 @@ export default function VideoDetailScreen() {
   const videoId = parseInt(id as string, 10);
 
   const { data: videoData, isLoading, refetch } = trpc.videos.get.useQuery({ id: videoId });
+  const reanalyzeMutation = trpc.videos.reanalyze.useMutation({
+    onSuccess: () => {
+      // Start polling immediately after triggering re-analysis
+      refetch();
+    },
+  });
+
+  const isReanalyzing = reanalyzeMutation.isPending;
+  const isAnalyzing = videoData?.status === "analyzing" || videoData?.status === "pending";
+
+  const handleReanalyze = () => {
+    if (!isReanalyzing && !isAnalyzing) {
+      reanalyzeMutation.mutate({ id: videoId });
+    }
+  };
 
   // Auto-refresh while analysis is in progress
   useEffect(() => {
-    if (videoData?.status === "analyzing" || videoData?.status === "pending") {
+    if (isAnalyzing) {
       const timer = setInterval(() => refetch(), 5000);
       return () => clearInterval(timer);
     }
-  }, [videoData?.status, refetch]);
+  }, [isAnalyzing, refetch]);
 
   const videoUrl = videoData?.videoUrl || "";
   const suggestions: Suggestion[] = useMemo(() => {
@@ -264,7 +279,20 @@ export default function VideoDetailScreen() {
             <Text className="text-xl font-bold text-foreground flex-1 text-center">
               {videoData?.title || "Video Analysis"}
             </Text>
-            <View className="w-10" />
+            {/* Re-analyze button */}
+            <TouchableOpacity
+              onPress={handleReanalyze}
+              disabled={isReanalyzing || isAnalyzing}
+              style={{
+                width: 40, height: 40,
+                alignItems: "center", justifyContent: "center",
+                backgroundColor: (isReanalyzing || isAnalyzing) ? colors.border : colors.primary + "22",
+                borderRadius: 20,
+                opacity: (isReanalyzing || isAnalyzing) ? 0.5 : 1,
+              }}
+            >
+              <Text style={{ fontSize: 18 }}>{isReanalyzing || isAnalyzing ? "⏳" : "🔄"}</Text>
+            </TouchableOpacity>
           </View>
 
           {/* Main Video Player */}
@@ -320,6 +348,18 @@ export default function VideoDetailScreen() {
                     <Text className="text-success font-semibold text-base">Analysis Complete</Text>
                     <Text className="text-success/80 text-sm">{suggestions.length} suggestions generated</Text>
                   </View>
+                  <TouchableOpacity
+                    onPress={handleReanalyze}
+                    style={{
+                      paddingHorizontal: 12, paddingVertical: 6,
+                      backgroundColor: colors.surface,
+                      borderRadius: 20, borderWidth: 1, borderColor: colors.border,
+                      flexDirection: "row", alignItems: "center", gap: 4,
+                    }}
+                  >
+                    <Text style={{ fontSize: 13 }}>🔄</Text>
+                    <Text style={{ fontSize: 12, color: colors.foreground, fontWeight: "600" }}>Re-analyze</Text>
+                  </TouchableOpacity>
                 </View>
               )}
               {(videoData.status === "analyzing" || videoData.status === "pending") && (
@@ -342,6 +382,18 @@ export default function VideoDetailScreen() {
                     <Text className="text-error font-semibold text-base">Analysis Failed</Text>
                     <Text className="text-error/80 text-sm">{videoData.errorMessage || "Please try again"}</Text>
                   </View>
+                  <TouchableOpacity
+                    onPress={handleReanalyze}
+                    style={{
+                      paddingHorizontal: 12, paddingVertical: 6,
+                      backgroundColor: colors.surface,
+                      borderRadius: 20, borderWidth: 1, borderColor: colors.border,
+                      flexDirection: "row", alignItems: "center", gap: 4,
+                    }}
+                  >
+                    <Text style={{ fontSize: 13 }}>🔄</Text>
+                    <Text style={{ fontSize: 12, color: colors.foreground, fontWeight: "600" }}>Retry</Text>
+                  </TouchableOpacity>
                 </View>
               )}
             </View>

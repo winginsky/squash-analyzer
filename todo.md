@@ -70,3 +70,10 @@
 - [x] Auto-pause after ~10 seconds to show just the relevant clip
 - [x] Show timestamp label and frame image as poster/thumbnail
 - [ ] Update skill reference files with the new pattern (pending)
+
+## Re-analyze Feature
+- [x] Add reanalyze tRPC mutation endpoint on server
+- [x] Reset status to "analyzing" and clear old results before re-running
+- [x] Add Re-analyze button to video detail screen header (🔄 icon top-right + inline in status banner)
+- [x] Show loading/disabled state while analysis is in progress (⏳ icon, button disabled)
+- [x] Refresh suggestion cards automatically after re-analysis completes (auto-poll every 5s)
