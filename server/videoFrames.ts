@@ -2,9 +2,8 @@
  * Video frame extraction utility.
  *
  * Downloads a video from a URL, uses ffmpeg to extract evenly-spaced frames
- * across the full duration, uploads each frame to S3, and returns their URLs.
- * This allows the AI to analyze the complete video rather than just the first
- * few seconds that the inline file_url approach provides.
+ * across the full duration, uploads each frame to S3, and returns their URLs
+ * along with the timestamp (in seconds) each frame was taken from.
  */
 
 import * as fs from "fs";
@@ -15,6 +14,15 @@ import { promisify } from "util";
 import { storagePut } from "./storage";
 
 const execFileAsync = promisify(execFile);
+
+export interface ExtractedFrame {
+  /** 0-based index of this frame */
+  index: number;
+  /** Public S3 URL of the JPEG image */
+  url: string;
+  /** Timestamp in seconds within the video where this frame was taken */
+  timestampSec: number;
+}
 
 /**
  * Get the duration of a video file in seconds using ffprobe.
@@ -42,7 +50,7 @@ async function extractFrame(
     "-ss", String(timestampSec),
     "-i", videoPath,
     "-frames:v", "1",
-    "-q:v", "3",          // JPEG quality (1=best, 31=worst)
+    "-q:v", "3",            // JPEG quality (1=best, 31=worst)
     "-vf", "scale=1280:-1", // max width 1280px, preserve aspect ratio
     "-y",
     outputPath,
@@ -62,16 +70,25 @@ async function downloadVideo(url: string, destPath: string): Promise<void> {
 }
 
 /**
+ * Format seconds as MM:SS string (e.g. 75 → "1:15").
+ */
+export function formatTimestamp(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+/**
  * Extract evenly-spaced frames from a video URL and upload them to S3.
  *
- * @param videoUrl  Public URL of the video (S3/CloudFront)
- * @param frameCount  Number of frames to extract (default 10)
- * @returns Array of public S3 URLs for the extracted frame images
+ * @param videoUrl   Public URL of the video (S3/CloudFront)
+ * @param frameCount Number of frames to extract (default 12)
+ * @returns Array of ExtractedFrame objects with URL and timestamp
  */
 export async function extractAndUploadFrames(
   videoUrl: string,
-  frameCount = 10,
-): Promise<string[]> {
+  frameCount = 12,
+): Promise<ExtractedFrame[]> {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "squash-frames-"));
   const videoPath = path.join(tmpDir, "video.mp4");
 
@@ -86,15 +103,15 @@ export async function extractAndUploadFrames(
       throw new Error("Could not determine video duration");
     }
 
-    // Place frames at evenly-spaced intervals, avoiding the very start/end
-    // e.g. for 10 frames in a 150s video: 7.5s, 22.5s, 37.5s, ... 142.5s
+    // Place frames at evenly-spaced intervals, avoiding the very start/end.
+    // e.g. for 12 frames in a 150s video: 6.25s, 18.75s, 31.25s, ...
     const interval = duration / frameCount;
     const timestamps = Array.from(
       { length: frameCount },
       (_, i) => interval * (i + 0.5),
     );
 
-    const frameUrls: string[] = [];
+    const frames: ExtractedFrame[] = [];
 
     for (let i = 0; i < timestamps.length; i++) {
       const ts = timestamps[i];
@@ -109,16 +126,15 @@ export async function extractAndUploadFrames(
       }
 
       const frameBuffer = fs.readFileSync(framePath);
-      const timestamp = Date.now();
-      const key = `frames/${timestamp}-frame-${i}.jpg`;
-      const { url } = await storagePut(key, frameBuffer, "image/jpeg");
-      frameUrls.push(url);
+      const uploadKey = `frames/${Date.now()}-frame-${i}.jpg`;
+      const { url } = await storagePut(uploadKey, frameBuffer, "image/jpeg");
+
+      frames.push({ index: i, url, timestampSec: ts });
     }
 
-    console.log(`[frames] Extracted and uploaded ${frameUrls.length} frames`);
-    return frameUrls;
+    console.log(`[frames] Extracted and uploaded ${frames.length} frames`);
+    return frames;
   } finally {
-    // Clean up temp files
     try {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     } catch {

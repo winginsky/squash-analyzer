@@ -6,7 +6,7 @@ import { publicProcedure, router } from "./_core/trpc";
 import * as db from "./db";
 import { storagePut } from "./storage";
 import { invokeLLM } from "./_core/llm";
-import { extractAndUploadFrames } from "./videoFrames";
+import { extractAndUploadFrames, formatTimestamp, type ExtractedFrame } from "./videoFrames";
 
 /**
  * Analyze a squash game video using AI vision
@@ -16,23 +16,24 @@ export async function analyzeSquashVideoPublic(videoUrl: string, playerName?: st
     // Extract evenly-spaced frames from the full video so the AI sees the
     // entire match rather than just the first few seconds.
     console.log("[analysis] Extracting frames from video:", videoUrl);
-    const frameUrls = await extractAndUploadFrames(videoUrl, 12);
+    const frames: ExtractedFrame[] = await extractAndUploadFrames(videoUrl, 12);
 
-    if (frameUrls.length === 0) {
+    if (frames.length === 0) {
       throw new Error("No frames could be extracted from the video");
     }
 
-    console.log(`[analysis] Sending ${frameUrls.length} frames to AI for analysis`);
+    console.log(`[analysis] Sending ${frames.length} frames to AI for analysis`);
 
-    // Build the image content parts — one per extracted frame
-    const imageContentParts = frameUrls.map((url, i) => ([
+    // Build the image content parts — one per extracted frame, labelled with
+    // a 1-based frame number so the AI can reference them in its response.
+    const imageContentParts = frames.map((frame, i) => ([
       {
         type: "text" as const,
-        text: `Frame ${i + 1} of ${frameUrls.length} (evenly spaced across full video duration):`,
+        text: `Frame ${i + 1} of ${frames.length} (at ${formatTimestamp(frame.timestampSec)} in the video):`,
       },
       {
         type: "image_url" as const,
-        image_url: { url, detail: "auto" as const },
+        image_url: { url: frame.url, detail: "auto" as const },
       },
     ])).flat();
 
@@ -40,7 +41,7 @@ export async function analyzeSquashVideoPublic(videoUrl: string, playerName?: st
       messages: [
         {
           role: "system",
-          content: `You are an expert squash coach analyzing game footage. You are given ${frameUrls.length} frames extracted evenly across the full video duration, so you have visibility into the entire match.
+          content: `You are an expert squash coach analyzing game footage. You are given ${frames.length} frames extracted evenly across the full video duration, so you have visibility into the entire match.
 
 Provide detailed, actionable feedback on:
 1. Technique (racket preparation, swing mechanics, follow-through)
@@ -55,15 +56,17 @@ For each suggestion, categorize it as:
 - "warning" for areas that need improvement
 - "error" for critical issues that significantly impact performance
 
+IMPORTANT: For each suggestion, you MUST reference the specific frame number (1-${frames.length}) that best illustrates the behavior you are describing. Choose the frame that most clearly shows the issue or positive behavior.
+
 Return your analysis as a JSON object with this structure:
-{"suggestions": [{"category": "technique|positioning|shot-selection|movement", "title": "string", "description": "string", "severity": "success|warning|error"}]}`,
+{"suggestions": [{"category": "technique|positioning|shot-selection|movement", "title": "string", "description": "string", "severity": "success|warning|error", "frame_index": <1-based frame number that best shows this behavior>}]}`,
         },
         {
           role: "user",
           content: [
             {
               type: "text" as const,
-              text: `Analyze these ${frameUrls.length} frames from a squash game video and provide detailed coaching feedback. These frames are evenly distributed across the full video so they represent the complete match.`,
+              text: `Analyze these ${frames.length} frames from a squash game video and provide detailed coaching feedback. These frames are evenly distributed across the full video so they represent the complete match. For each suggestion, reference the specific frame number that best illustrates the behavior.`,
             },
             ...imageContentParts,
           ],
@@ -75,9 +78,29 @@ Return your analysis as a JSON object with this structure:
     const content = response.choices[0].message.content as string;
     const analysisData = JSON.parse(content);
 
-    return {
-      suggestions: analysisData.suggestions || [],
-    };
+    // Attach the actual frame URL and timestamp to each suggestion based on
+    // the frame_index the AI returned (1-based). Fall back to frame 1 if missing.
+    const suggestions = (analysisData.suggestions || []).map((s: {
+      category: string;
+      title: string;
+      description: string;
+      severity: string;
+      frame_index?: number;
+    }) => {
+      const idx = Math.max(0, Math.min((s.frame_index ?? 1) - 1, frames.length - 1));
+      const matchedFrame = frames[idx];
+      return {
+        category: s.category,
+        title: s.title,
+        description: s.description,
+        severity: s.severity,
+        frameUrl: matchedFrame?.url ?? null,
+        frameTimestamp: matchedFrame ? formatTimestamp(matchedFrame.timestampSec) : null,
+        frameTimestampSec: matchedFrame?.timestampSec ?? null,
+      };
+    });
+
+    return { suggestions };
   } catch (error) {
     console.error("Video analysis failed:", error);
     throw new Error("Failed to analyze video");

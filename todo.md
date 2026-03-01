@@ -56,3 +56,10 @@
 - [x] Embed player name/description fields directly on home screen
 - [x] Fix video upload failure error on web (switched to multipart FormData upload, bypasses tRPC body size limit)
 - [x] Fix AI analysis only seeing short clip instead of full video (now extracts 12 evenly-spaced frames via ffmpeg across full duration and sends as images)
+
+## Frame Snapshot per Suggestion
+- [x] Update AI prompt to return frame_index per suggestion (referencing which extracted frame shows the behavior)
+- [x] Update database schema to store frameUrl per suggestion (stored in existing JSON analysisResults column)
+- [x] Update analysis pipeline to attach the matching frame URL to each suggestion
+- [x] Update video detail UI to show frame snapshot inline with each suggestion card (collapsible)
+- [x] Add timestamp label below each frame snapshot (e.g. "at 0:45")
