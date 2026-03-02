@@ -8,64 +8,78 @@ import { VideoView, useVideoPlayer } from "expo-video";
 import { ScreenContainer } from "@/components/screen-container";
 import { useColors } from "@/hooks/use-colors";
 
-// ─── Frame reference link parser ─────────────────────────────────────────────
-// Matches patterns like: "frame 6", "Frame 6", "(frame 6)", "(frame 6, ...)"
-const FRAME_REF_REGEX = /\(?[Ff]rame\s+(\d+)(?:[^)]*)?\)?/g;
-
+// ─── Thumbnail clip button ────────────────────────────────────────────────────
 /**
- * Splits a description string into plain text segments and frame-reference
- * segments. Frame references are rendered as tappable highlighted links.
+ * A single clickable thumbnail that shows the extracted frame image with a
+ * timestamp badge. Tapping it seeks the main video to that moment.
  */
-function DescriptionWithFrameLinks({
-  text,
-  frames,
-  onFrameTap,
+function ThumbnailClip({
+  frameUrl,
+  frameTimestamp,
+  timestampSec,
+  onPress,
   colors,
 }: {
-  text: string;
-  frames: Array<{ timestampSec: number; url: string }>;
-  onFrameTap: (timestampSec: number) => void;
+  frameUrl: string;
+  frameTimestamp: string;
+  timestampSec: number;
+  onPress: (sec: number) => void;
   colors: ReturnType<typeof useColors>;
 }) {
-  const parts: Array<{ type: "text" | "link"; content: string; frameIndex: number; timestampSec: number }> = [];
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
-  const regex = new RegExp(FRAME_REF_REGEX.source, "g");
-
-  while ((match = regex.exec(text)) !== null) {
-    if (match.index > lastIndex) {
-      parts.push({ type: "text", content: text.slice(lastIndex, match.index), frameIndex: -1, timestampSec: -1 });
-    }
-    const frameNum = parseInt(match[1], 10);
-    const frameIdx = Math.max(0, Math.min(frameNum - 1, frames.length - 1));
-    const ts = frames[frameIdx]?.timestampSec ?? -1;
-    parts.push({ type: "link", content: match[0], frameIndex: frameIdx, timestampSec: ts });
-    lastIndex = match.index + match[0].length;
-  }
-  if (lastIndex < text.length) {
-    parts.push({ type: "text", content: text.slice(lastIndex), frameIndex: -1, timestampSec: -1 });
-  }
-
+  const [pressed, setPressed] = useState(false);
   return (
-    <Text style={{ fontSize: 14, color: colors.muted, lineHeight: 21 }}>
-      {parts.map((part, i) =>
-        part.type === "link" && part.timestampSec >= 0 ? (
-          <Text
-            key={i}
-            onPress={() => onFrameTap(part.timestampSec)}
-            style={{
-              color: colors.primary,
-              textDecorationLine: "underline",
-              fontWeight: "600",
-            }}
-          >
-            {part.content}
-          </Text>
-        ) : (
-          <Text key={i}>{part.content}</Text>
-        )
-      )}
-    </Text>
+    <TouchableOpacity
+      onPress={() => onPress(timestampSec)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      style={{
+        marginRight: 10,
+        borderRadius: 10,
+        overflow: "hidden",
+        borderWidth: 2,
+        borderColor: pressed ? colors.primary : colors.border,
+        opacity: pressed ? 0.85 : 1,
+        width: 140,
+      }}
+    >
+      {/* Frame image */}
+      <View style={{ width: 140, height: 80, backgroundColor: colors.surface }}>
+        {/* @ts-ignore */}
+        <img
+          src={frameUrl}
+          alt={`Frame at ${frameTimestamp}`}
+          style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+        />
+        {/* Play icon overlay */}
+        <View style={{
+          position: "absolute", inset: 0,
+          alignItems: "center", justifyContent: "center",
+          backgroundColor: "rgba(0,0,0,0.18)",
+        }}>
+          <View style={{
+            width: 28, height: 28, borderRadius: 14,
+            backgroundColor: "rgba(0,0,0,0.55)",
+            alignItems: "center", justifyContent: "center",
+          }}>
+            <Text style={{ color: "#fff", fontSize: 12, marginLeft: 2 }}>▶</Text>
+          </View>
+        </View>
+        {/* Timestamp badge */}
+        <View style={{
+          position: "absolute", bottom: 4, right: 4,
+          backgroundColor: "rgba(0,0,0,0.65)", borderRadius: 5,
+          paddingHorizontal: 5, paddingVertical: 2,
+        }}>
+          <Text style={{ color: "#fff", fontSize: 10, fontWeight: "700" }}>⏱ {frameTimestamp}</Text>
+        </View>
+      </View>
+      {/* Label */}
+      <View style={{ backgroundColor: colors.surface, paddingHorizontal: 8, paddingVertical: 5 }}>
+        <Text style={{ fontSize: 11, color: colors.foreground, fontWeight: "600", textAlign: "center" }}>
+          ▶ Play from {frameTimestamp}
+        </Text>
+      </View>
+    </TouchableOpacity>
   );
 }
 
@@ -327,16 +341,6 @@ export default function VideoDetailScreen() {
   const mainVideoRef = useRef<HTMLVideoElement | null>(null);
   const scrollViewRef = useRef<ScrollView | null>(null);
 
-  // Build a flat frames array from all suggestions for timestamp lookup
-  const allFrames = useMemo(() => {
-    return suggestions
-      .filter((s) => s.frameTimestampSec != null)
-      .map((s) => ({ timestampSec: s.frameTimestampSec!, url: s.frameUrl ?? "" }))
-      // Deduplicate by timestampSec and sort ascending
-      .filter((f, i, arr) => arr.findIndex((x) => x.timestampSec === f.timestampSec) === i)
-      .sort((a, b) => a.timestampSec - b.timestampSec);
-  }, [suggestions]);
-
   // Native main player (only initialised on native — must be declared before seekMainVideo)
   const mainPlayer = useVideoPlayer(Platform.OS !== "web" ? videoUrl : "", (p) => {
     p.loop = false;
@@ -505,7 +509,7 @@ export default function VideoDetailScreen() {
             <View className="px-6 pb-8">
               <Text className="text-2xl font-bold text-foreground mb-1">AI Coaching Suggestions</Text>
               <Text className="text-sm text-muted mb-5">
-                Tap a <Text style={{ color: colors.primary, fontWeight: "600" }}>frame reference</Text> in any suggestion to jump to that moment, or tap "Show example clip" for a short preview.
+                Each suggestion includes an example frame from the video. Tap the thumbnail to jump to that moment and watch the clip.
               </Text>
 
               {suggestions.map((suggestion, idx) => {
@@ -538,27 +542,32 @@ export default function VideoDetailScreen() {
                       </View>
                     </View>
 
-                    {/* Description — frame references are clickable links */}
-                    <DescriptionWithFrameLinks
-                      text={suggestion.description}
-                      frames={allFrames}
-                      onFrameTap={seekMainVideo}
-                      colors={colors}
-                    />
+                    {/* Description */}
+                    <Text style={{ fontSize: 14, color: colors.muted, lineHeight: 21 }}>
+                      {suggestion.description}
+                    </Text>
 
                     {/* Category label */}
                     <Text style={{ fontSize: 11, fontWeight: "600", color: colors.muted, textTransform: "uppercase", marginTop: 8, letterSpacing: 0.5 }}>
                       {suggestion.category.replace("-", " ")}
                     </Text>
 
-                    {/* Inline clip player */}
-                    {hasSec && videoUrl ? (
-                      <ClipPlayer
-                        videoUrl={videoUrl}
-                        startSec={suggestion.frameTimestampSec!}
-                        frameTimestamp={suggestion.frameTimestamp}
-                        colors={colors}
-                      />
+                    {/* Thumbnail clip strip — shown when a frame image is available */}
+                    {hasSec && suggestion.frameUrl && suggestion.frameTimestamp ? (
+                      <View style={{ marginTop: 14 }}>
+                        <Text style={{ fontSize: 11, color: colors.muted, fontWeight: "600", marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                          Example — tap to jump to this moment
+                        </Text>
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                          <ThumbnailClip
+                            frameUrl={suggestion.frameUrl}
+                            frameTimestamp={suggestion.frameTimestamp}
+                            timestampSec={suggestion.frameTimestampSec!}
+                            onPress={seekMainVideo}
+                            colors={colors}
+                          />
+                        </ScrollView>
+                      </View>
                     ) : suggestion.frameTimestamp ? (
                       <View style={{ marginTop: 10, flexDirection: "row", alignItems: "center" }}>
                         <Text style={{ fontSize: 12, color: colors.muted }}>⏱ Occurs at {suggestion.frameTimestamp}</Text>

@@ -84,3 +84,11 @@
 - [x] On tap, seek main video player to the timestamp of that frame number
 - [x] Highlight the link in primary color with underline to signal interactivity
 - [x] Scroll main video into view when a frame link is tapped
+
+## Visual Thumbnail Strip per Suggestion
+- [x] Remove invisible "frame N" clickable text links from description
+- [x] Build ThumbnailStrip component: horizontal scrollable row of frame images
+- [x] Each thumbnail shows the extracted frame image with a timestamp badge overlay
+- [x] Tapping a thumbnail seeks main video to that timestamp and plays a short clip
+- [x] Add a "▶ Play clip" label below each thumbnail for clarity
+- [ ] Show a pulsing border/highlight on the main video player when seeked (deferred)
