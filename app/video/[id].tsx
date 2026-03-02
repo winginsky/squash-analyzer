@@ -16,20 +16,28 @@ import { useColors } from "@/hooks/use-colors";
 function ThumbnailClip({
   frameUrl,
   frameTimestamp,
+  endFrameTimestamp,
   timestampSec,
+  endTimestampSec,
   onPress,
   colors,
 }: {
   frameUrl: string;
   frameTimestamp: string;
+  endFrameTimestamp?: string | null;
   timestampSec: number;
-  onPress: (sec: number) => void;
+  endTimestampSec?: number | null;
+  onPress: (startSec: number, endSec?: number) => void;
   colors: ReturnType<typeof useColors>;
 }) {
   const [pressed, setPressed] = useState(false);
+  // Show a range badge if start and end differ
+  const hasRange = endFrameTimestamp && endFrameTimestamp !== frameTimestamp;
+  const badgeLabel = hasRange ? `${frameTimestamp} → ${endFrameTimestamp}` : frameTimestamp;
+  const playLabel = hasRange ? `▶ Play ${frameTimestamp} → ${endFrameTimestamp}` : `▶ Play from ${frameTimestamp}`;
   return (
     <TouchableOpacity
-      onPress={() => onPress(timestampSec)}
+      onPress={() => onPress(timestampSec, endTimestampSec ?? undefined)}
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
       style={{
@@ -39,11 +47,11 @@ function ThumbnailClip({
         borderWidth: 2,
         borderColor: pressed ? colors.primary : colors.border,
         opacity: pressed ? 0.85 : 1,
-        width: 140,
+        width: hasRange ? 180 : 140,
       }}
     >
       {/* Frame image */}
-      <View style={{ width: 140, height: 80, backgroundColor: colors.surface }}>
+      <View style={{ width: hasRange ? 180 : 140, height: 80, backgroundColor: colors.surface }}>
         {/* @ts-ignore */}
         <img
           src={frameUrl}
@@ -64,19 +72,19 @@ function ThumbnailClip({
             <Text style={{ color: "#fff", fontSize: 12, marginLeft: 2 }}>▶</Text>
           </View>
         </View>
-        {/* Timestamp badge */}
+        {/* Timestamp range badge */}
         <View style={{
           position: "absolute", bottom: 4, right: 4,
           backgroundColor: "rgba(0,0,0,0.65)", borderRadius: 5,
           paddingHorizontal: 5, paddingVertical: 2,
         }}>
-          <Text style={{ color: "#fff", fontSize: 10, fontWeight: "700" }}>⏱ {frameTimestamp}</Text>
+          <Text style={{ color: "#fff", fontSize: 10, fontWeight: "700" }}>⏱ {badgeLabel}</Text>
         </View>
       </View>
       {/* Label */}
       <View style={{ backgroundColor: colors.surface, paddingHorizontal: 8, paddingVertical: 5 }}>
         <Text style={{ fontSize: 11, color: colors.foreground, fontWeight: "600", textAlign: "center" }}>
-          ▶ Play from {frameTimestamp}
+          {playLabel}
         </Text>
       </View>
     </TouchableOpacity>
@@ -92,6 +100,8 @@ type Suggestion = {
   frameUrl?: string | null;
   frameTimestamp?: string | null;
   frameTimestampSec?: number | null;
+  endFrameTimestamp?: string | null;
+  endFrameTimestampSec?: number | null;
 };
 
 const getCategoryIcon = (category: string) => {
@@ -346,18 +356,36 @@ export default function VideoDetailScreen() {
     p.loop = false;
   });
 
-  // Seek the main video player to a given timestamp and scroll to top
-  const seekMainVideo = useCallback((timestampSec: number) => {
+  // Seek the main video player to a given timestamp and scroll to top.
+  // If endSec is provided, auto-pause the video at that point.
+  const seekMainVideo = useCallback((startSec: number, endSec?: number) => {
     if (Platform.OS === "web") {
       const el = mainVideoRef.current;
       if (el) {
-        el.currentTime = timestampSec;
+        el.currentTime = startSec;
         el.play().catch(() => {});
+        if (endSec != null && endSec > startSec) {
+          // Remove any previous listener to avoid stacking
+          const handler = () => {
+            if (el.currentTime >= endSec) {
+              el.pause();
+              el.removeEventListener("timeupdate", handler);
+            }
+          };
+          el.addEventListener("timeupdate", handler);
+        }
       }
     } else {
       try {
-        mainPlayer.currentTime = timestampSec;
+        mainPlayer.currentTime = startSec;
         mainPlayer.play();
+        // On native, schedule a pause after the clip duration
+        if (endSec != null && endSec > startSec) {
+          const durationMs = (endSec - startSec) * 1000;
+          setTimeout(() => {
+            try { mainPlayer.pause(); } catch { /* ignore */ }
+          }, durationMs);
+        }
       } catch { /* ignore */ }
     }
     // Scroll back to top so the user sees the main video start playing
@@ -562,7 +590,9 @@ export default function VideoDetailScreen() {
                           <ThumbnailClip
                             frameUrl={suggestion.frameUrl}
                             frameTimestamp={suggestion.frameTimestamp}
+                            endFrameTimestamp={suggestion.endFrameTimestamp}
                             timestampSec={suggestion.frameTimestampSec!}
+                            endTimestampSec={suggestion.endFrameTimestampSec}
                             onPress={seekMainVideo}
                             colors={colors}
                           />

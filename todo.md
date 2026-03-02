@@ -92,3 +92,9 @@
 - [x] Tapping a thumbnail seeks main video to that timestamp and plays a short clip
 - [x] Add a "▶ Play clip" label below each thumbnail for clarity
 - [ ] Show a pulsing border/highlight on the main video player when seeked (deferred)
+
+## Clip Start→End Timestamp
+- [x] Update AI prompt to return end_frame_index per suggestion (in addition to frame_index)
+- [x] Update server to compute and store endFrameTimestampSec and endFrameTimestamp per suggestion
+- [x] Update ThumbnailClip badge to show "M:SS → M:SS" range
+- [x] Update video seek to auto-pause at endFrameTimestampSec instead of fixed 10s

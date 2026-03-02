@@ -56,10 +56,14 @@ For each suggestion, categorize it as:
 - "warning" for areas that need improvement
 - "error" for critical issues that significantly impact performance
 
-IMPORTANT: For each suggestion, you MUST reference the specific frame number (1-${frames.length}) that best illustrates the behavior you are describing. Choose the frame that most clearly shows the issue or positive behavior.
+IMPORTANT: For each suggestion, you MUST reference the specific frame numbers that best illustrate the behavior:
+- "frame_index": the 1-based frame number where the behavior STARTS or is first visible
+- "end_frame_index": the 1-based frame number where the behavior ENDS or is last visible (can be the same as frame_index if it is a single moment, or a later frame if it spans multiple frames)
+
+Choose frames that together form a meaningful clip showing the issue or positive behavior.
 
 Return your analysis as a JSON object with this structure:
-{"suggestions": [{"category": "technique|positioning|shot-selection|movement", "title": "string", "description": "string", "severity": "success|warning|error", "frame_index": <1-based frame number that best shows this behavior>}]}`,
+{"suggestions": [{"category": "technique|positioning|shot-selection|movement", "title": "string", "description": "string", "severity": "success|warning|error", "frame_index": <1-based start frame>, "end_frame_index": <1-based end frame>}]}`,
         },
         {
           role: "user",
@@ -86,17 +90,24 @@ Return your analysis as a JSON object with this structure:
       description: string;
       severity: string;
       frame_index?: number;
+      end_frame_index?: number;
     }) => {
-      const idx = Math.max(0, Math.min((s.frame_index ?? 1) - 1, frames.length - 1));
-      const matchedFrame = frames[idx];
+      const startIdx = Math.max(0, Math.min((s.frame_index ?? 1) - 1, frames.length - 1));
+      // end_frame_index defaults to start + 1 frame (or same frame if at the end)
+      const rawEndIdx = s.end_frame_index != null ? s.end_frame_index - 1 : startIdx + 1;
+      const endIdx = Math.max(startIdx, Math.min(rawEndIdx, frames.length - 1));
+      const startFrame = frames[startIdx];
+      const endFrame = frames[endIdx];
       return {
         category: s.category,
         title: s.title,
         description: s.description,
         severity: s.severity,
-        frameUrl: matchedFrame?.url ?? null,
-        frameTimestamp: matchedFrame ? formatTimestamp(matchedFrame.timestampSec) : null,
-        frameTimestampSec: matchedFrame?.timestampSec ?? null,
+        frameUrl: startFrame?.url ?? null,
+        frameTimestamp: startFrame ? formatTimestamp(startFrame.timestampSec) : null,
+        frameTimestampSec: startFrame?.timestampSec ?? null,
+        endFrameTimestamp: endFrame ? formatTimestamp(endFrame.timestampSec) : null,
+        endFrameTimestampSec: endFrame?.timestampSec ?? null,
       };
     });
 
