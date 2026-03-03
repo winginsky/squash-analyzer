@@ -98,3 +98,11 @@
 - [x] Update server to compute and store endFrameTimestampSec and endFrameTimestamp per suggestion
 - [x] Update ThumbnailClip badge to show "M:SS → M:SS" range
 - [x] Update video seek to auto-pause at endFrameTimestampSec instead of fixed 10s
+
+## Top 4 Ranked Suggestions
+- [x] Update AI prompt to identify top 4 improvement areas only, ranked by occurrence count
+- [x] Add occurrence_count field to each suggestion in AI response
+- [x] Update server to pass occurrence_count through to stored analysisResults
+- [x] Update suggestion card UI to show occurrence count badge (e.g. "×7 occurrences")
+- [x] Update suggestion card UI to show rank number (#1, #2, #3, #4) with color-coded circles
+- [x] Sort suggestions by occurrence_count descending before rendering (server-side + client-side guard)

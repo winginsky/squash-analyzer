@@ -43,34 +43,33 @@ export async function analyzeSquashVideoPublic(videoUrl: string, playerName?: st
           role: "system",
           content: `You are an expert squash coach analyzing game footage. You are given ${frames.length} frames extracted evenly across the full video duration, so you have visibility into the entire match.
 
-Provide detailed, actionable feedback on:
-1. Technique (racket preparation, swing mechanics, follow-through)
-2. Positioning (T-position recovery, court coverage)
-3. Shot Selection (when to use drops, drives, lobs, etc.)
-4. Movement (footwork patterns, efficiency, explosiveness)
-
 ${playerName ? `Focus your analysis specifically on the player: ${playerName}${playerDescription ? ` (${playerDescription})` : ''}. Ignore other players in the video.` : 'Analyze the primary player visible in the footage.'}
 
-For each suggestion, categorize it as:
-- "success" for things done well
-- "warning" for areas that need improvement
-- "error" for critical issues that significantly impact performance
+Your task is to identify the TOP 4 most impactful improvement areas for this player, based on how frequently each problem appears across the video frames.
 
-IMPORTANT: For each suggestion, you MUST reference the specific frame numbers that best illustrate the behavior:
+For each of the 4 areas:
+1. Count how many times across all ${frames.length} frames you observe the problem occurring (occurrence_count)
+2. Rank them from most frequent to least frequent
+3. Focus only on "warning" or "error" severity issues — things that need improvement
+4. Provide a concrete, actionable description of what to fix and why it matters
+
+For each suggestion, you MUST reference the specific frame numbers that best illustrate the behavior:
 - "frame_index": the 1-based frame number where the behavior STARTS or is first visible
 - "end_frame_index": the 1-based frame number where the behavior ENDS or is last visible (can be the same as frame_index if it is a single moment, or a later frame if it spans multiple frames)
 
-Choose frames that together form a meaningful clip showing the issue or positive behavior.
+Choose frames that together form a meaningful clip showing the issue.
+
+Return EXACTLY 4 suggestions (or fewer if fewer than 4 distinct issues exist), sorted by occurrence_count descending.
 
 Return your analysis as a JSON object with this structure:
-{"suggestions": [{"category": "technique|positioning|shot-selection|movement", "title": "string", "description": "string", "severity": "success|warning|error", "frame_index": <1-based start frame>, "end_frame_index": <1-based end frame>}]}`,
+{"suggestions": [{"category": "technique|positioning|shot-selection|movement", "title": "string", "description": "string", "severity": "warning|error", "occurrence_count": <integer>, "frame_index": <1-based start frame>, "end_frame_index": <1-based end frame>}]}`,
         },
         {
           role: "user",
           content: [
             {
               type: "text" as const,
-              text: `Analyze these ${frames.length} frames from a squash game video and provide detailed coaching feedback. These frames are evenly distributed across the full video so they represent the complete match. For each suggestion, reference the specific frame number that best illustrates the behavior.`,
+              text: `Analyze these ${frames.length} frames from a squash game video. Identify the TOP 4 most frequent improvement areas for the player, counted by how many times each problem appears across the frames. Return them ranked by occurrence_count (most frequent first). For each suggestion, reference the specific frame numbers that best illustrate the behavior.`,
             },
             ...imageContentParts,
           ],
@@ -84,14 +83,21 @@ Return your analysis as a JSON object with this structure:
 
     // Attach the actual frame URL and timestamp to each suggestion based on
     // the frame_index the AI returned (1-based). Fall back to frame 1 if missing.
-    const suggestions = (analysisData.suggestions || []).map((s: {
+    // Sort by occurrence_count descending (most frequent first) and take top 4
+    const rawSuggestions = (analysisData.suggestions || []) as Array<{
       category: string;
       title: string;
       description: string;
       severity: string;
+      occurrence_count?: number;
       frame_index?: number;
       end_frame_index?: number;
-    }) => {
+    }>;
+    const sortedSuggestions = rawSuggestions
+      .sort((a, b) => (b.occurrence_count ?? 0) - (a.occurrence_count ?? 0))
+      .slice(0, 4);
+
+    const suggestions = sortedSuggestions.map((s) => {
       const startIdx = Math.max(0, Math.min((s.frame_index ?? 1) - 1, frames.length - 1));
       // end_frame_index defaults to start + 1 frame (or same frame if at the end)
       const rawEndIdx = s.end_frame_index != null ? s.end_frame_index - 1 : startIdx + 1;
@@ -103,6 +109,7 @@ Return your analysis as a JSON object with this structure:
         title: s.title,
         description: s.description,
         severity: s.severity,
+        occurrenceCount: s.occurrence_count ?? null,
         frameUrl: startFrame?.url ?? null,
         frameTimestamp: startFrame ? formatTimestamp(startFrame.timestampSec) : null,
         frameTimestampSec: startFrame?.timestampSec ?? null,

@@ -97,6 +97,7 @@ type Suggestion = {
   title: string;
   description: string;
   severity: "success" | "warning" | "error";
+  occurrenceCount?: number | null;
   frameUrl?: string | null;
   frameTimestamp?: string | null;
   frameTimestampSec?: number | null;
@@ -535,14 +536,16 @@ export default function VideoDetailScreen() {
           {/* Suggestions */}
           {suggestions.length > 0 && (
             <View className="px-6 pb-8">
-              <Text className="text-2xl font-bold text-foreground mb-1">AI Coaching Suggestions</Text>
+              <Text className="text-2xl font-bold text-foreground mb-1">Top {suggestions.length} Improvement Areas</Text>
               <Text className="text-sm text-muted mb-5">
-                Each suggestion includes an example frame from the video. Tap the thumbnail to jump to that moment and watch the clip.
+                Ranked by how often each issue appears in the video. Tap a thumbnail to jump to that moment.
               </Text>
 
               {suggestions.map((suggestion, idx) => {
                 const style = getSeverityStyle(suggestion.severity);
                 const hasSec = suggestion.frameTimestampSec != null;
+                const rankColors = ["#EF4444", "#F59E0B", "#3B82F6", "#8B5CF6"];
+                const rankColor = rankColors[idx] ?? "#687076";
                 return (
                   <View
                     key={suggestion.id ?? idx}
@@ -557,17 +560,44 @@ export default function VideoDetailScreen() {
                       borderColor: colors.border,
                     }}
                   >
+                    {/* Rank + occurrence count row */}
+                    <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 10 }}>
+                      {/* Rank circle */}
+                      <View style={{
+                        width: 32, height: 32, borderRadius: 16,
+                        backgroundColor: rankColor,
+                        alignItems: "center", justifyContent: "center",
+                        marginRight: 10,
+                      }}>
+                        <Text style={{ color: "#fff", fontSize: 14, fontWeight: "800" }}>#{idx + 1}</Text>
+                      </View>
+                      {/* Occurrence count badge */}
+                      {suggestion.occurrenceCount != null && (
+                        <View style={{
+                          backgroundColor: rankColor + "22",
+                          borderRadius: 12, paddingHorizontal: 10, paddingVertical: 3,
+                          borderWidth: 1, borderColor: rankColor + "55",
+                          marginRight: 8,
+                        }}>
+                          <Text style={{ color: rankColor, fontSize: 12, fontWeight: "700" }}>
+                            ×{suggestion.occurrenceCount} occurrences
+                          </Text>
+                        </View>
+                      )}
+                      {/* Severity badge */}
+                      <View style={{ backgroundColor: style.badge, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 3 }}>
+                        <Text style={{ color: style.badgeText, fontSize: 11, fontWeight: "700" }}>
+                          {getSeverityLabel(suggestion.severity)}
+                        </Text>
+                      </View>
+                    </View>
+
                     {/* Title row */}
                     <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}>
                       <Text style={{ fontSize: 22, marginRight: 8 }}>{getCategoryIcon(suggestion.category)}</Text>
                       <Text style={{ fontSize: 16, fontWeight: "700", color: colors.foreground, flex: 1 }}>
                         {suggestion.title}
                       </Text>
-                      <View style={{ backgroundColor: style.badge, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 3, marginLeft: 8 }}>
-                        <Text style={{ color: style.badgeText, fontSize: 11, fontWeight: "700" }}>
-                          {getSeverityLabel(suggestion.severity)}
-                        </Text>
-                      </View>
                     </View>
 
                     {/* Description */}
