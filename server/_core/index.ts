@@ -3,11 +3,14 @@ import express from "express";
 import { createServer } from "http";
 import net from "net";
 import multer from "multer";
+import * as fs from "fs";
+import * as path from "path";
+import * as os from "os";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { appRouter, analyzeSquashVideoPublic } from "../routers";
 import { createContext } from "./context";
-import { storagePut } from "../storage";
+import { storagePut, storagePutFile } from "../storage";
 import * as db from "../db";
 
 function isPortAvailable(port: number): Promise<boolean> {
@@ -64,19 +67,40 @@ async function startServer() {
   });
 
   // ── Multipart video upload endpoint ──────────────────────────────────────
-  // Uses multer memory storage so we can pipe the buffer directly to S3.
-  // This avoids the tRPC JSON body size limit for large video files.
+  // Uses multer DISK storage so large video files are streamed to a temp
+  // directory rather than buffered entirely in RAM. This avoids OOM errors
+  // for videos that are hundreds of MB.
+  const uploadTmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "squash-upload-"));
   const upload = multer({
-    storage: multer.memoryStorage(),
-    limits: { fileSize: 500 * 1024 * 1024 }, // 500 MB max
+    storage: multer.diskStorage({
+      destination: (_req, _file, cb) => cb(null, uploadTmpDir),
+      filename: (_req, file, cb) => {
+        const ext = (file.mimetype || "video/mp4").split("/")[1] || "mp4";
+        cb(null, `${Date.now()}-${Math.random().toString(36).substring(7)}.${ext}`);
+      },
+    }),
+    limits: { fileSize: 2 * 1024 * 1024 * 1024 }, // 2 GB max
   });
 
   app.post(
     "/api/upload-video",
-    upload.single("video"),
+    (req: express.Request, res: express.Response, next: express.NextFunction) => {
+      upload.single("video")(req, res, (err) => {
+        if (err) {
+          if (err.code === "LIMIT_FILE_SIZE") {
+            res.status(413).json({ error: "File too large. Maximum video size is 2 GB." });
+          } else {
+            res.status(400).json({ error: "Upload error", detail: String(err) });
+          }
+          return;
+        }
+        next();
+      });
+    },
     async (req: express.Request, res: express.Response) => {
+      const tmpFilePath = (req.file as Express.Multer.File & { path: string })?.path;
       try {
-        if (!req.file) {
+        if (!req.file || !tmpFilePath) {
           res.status(400).json({ error: "No video file provided" });
           return;
         }
@@ -93,13 +117,13 @@ async function startServer() {
         }
 
         const mimeType = req.file.mimetype || "video/mp4";
-        const ext = mimeType.split("/")[1] || "mp4";
+        const ext = (mimeType.split("/")[1] || "mp4").replace("quicktime", "mov");
         const timestamp = Date.now();
         const randomSuffix = Math.random().toString(36).substring(7);
         const fileKey = `videos/${timestamp}-${randomSuffix}.${ext}`;
 
-        // Upload buffer directly to S3
-        const { url: videoUrl } = await storagePut(fileKey, req.file.buffer, mimeType);
+        // Upload directly from disk to S3 — avoids loading the whole file into RAM
+        const { url: videoUrl } = await storagePutFile(fileKey, tmpFilePath, mimeType);
 
         // Create database record
         const videoId = await db.createVideoAnalysis({
@@ -110,6 +134,10 @@ async function startServer() {
           status: "pending",
         });
 
+        // Respond immediately so the browser isn't waiting
+        res.json({ id: videoId, videoUrl });
+
+        // Run analysis asynchronously after responding
         analyzeSquashVideoPublic(videoUrl, playerName, playerDescription)
           .then(async (results: { suggestions: unknown[] }) => {
             await db.updateVideoAnalysis(videoId, {
@@ -123,11 +151,16 @@ async function startServer() {
               errorMessage: error.message,
             });
           });
-
-        res.json({ id: videoId, videoUrl });
       } catch (err) {
         console.error("[upload-video] error:", err);
-        res.status(500).json({ error: "Upload failed", detail: String(err) });
+        if (!res.headersSent) {
+          res.status(500).json({ error: "Upload failed", detail: String(err) });
+        }
+      } finally {
+        // Clean up temp file
+        if (tmpFilePath) {
+          try { fs.unlinkSync(tmpFilePath); } catch { /* ignore */ }
+        }
       }
     },
   );

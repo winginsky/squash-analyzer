@@ -56,6 +56,21 @@ function toFormData(
   return form;
 }
 
+function toFormDataFromPath(
+  filePath: string,
+  contentType: string,
+  fileName: string,
+): FormData {
+  // Read file as buffer and wrap in a Blob — avoids keeping the entire
+  // buffer in scope any longer than needed for the upload.
+  const { readFileSync } = require("fs") as typeof import("fs");
+  const buffer = readFileSync(filePath);
+  const blob = new Blob([buffer], { type: contentType });
+  const form = new FormData();
+  form.append("file", blob, fileName || "file");
+  return form;
+}
+
 function buildAuthHeaders(apiKey: string): HeadersInit {
   return { Authorization: `Bearer ${apiKey}` };
 }
@@ -69,6 +84,36 @@ export async function storagePut(
   const key = normalizeKey(relKey);
   const uploadUrl = buildUploadUrl(baseUrl, key);
   const formData = toFormData(data, contentType, key.split("/").pop() ?? key);
+  const response = await fetch(uploadUrl, {
+    method: "POST",
+    headers: buildAuthHeaders(apiKey),
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const message = await response.text().catch(() => response.statusText);
+    throw new Error(
+      `Storage upload failed (${response.status} ${response.statusText}): ${message}`,
+    );
+  }
+  const url = (await response.json()).url;
+  return { key, url };
+}
+
+/**
+ * Upload a file directly from a local file path to storage.
+ * More memory-efficient than storagePut for large files since it reads
+ * the file only once and does not keep the buffer in scope after the upload.
+ */
+export async function storagePutFile(
+  relKey: string,
+  filePath: string,
+  contentType = "application/octet-stream",
+): Promise<{ key: string; url: string }> {
+  const { baseUrl, apiKey } = getStorageConfig();
+  const key = normalizeKey(relKey);
+  const uploadUrl = buildUploadUrl(baseUrl, key);
+  const formData = toFormDataFromPath(filePath, contentType, key.split("/").pop() ?? key);
   const response = await fetch(uploadUrl, {
     method: "POST",
     headers: buildAuthHeaders(apiKey),

@@ -114,3 +114,8 @@
 - [x] Build GameStatsPanel UI component (grid of stat cards with icon + count + label)
 - [x] Build StrategySummary UI section (card with paragraph text)
 - [x] Restructure video detail page: Stats → Strategy → Top 4 Improvements
+
+## Upload Error Debugging
+- [x] Improve upload error message to show actual error detail to user
+- [x] Add try/catch around blob fetch step separately from upload step
+- [x] Verify blob type is correctly detected for all video formats

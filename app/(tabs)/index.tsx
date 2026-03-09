@@ -99,8 +99,15 @@ export default function HomeScreen() {
       });
 
       if (!res.ok) {
-        const errText = await res.text();
-        throw new Error(`Server error ${res.status}: ${errText}`);
+        let errMsg = `Upload failed (HTTP ${res.status})`;
+        try {
+          const errJson = await res.json();
+          errMsg = errJson.error || errMsg;
+        } catch {
+          const errText = await res.text().catch(() => "");
+          if (errText) errMsg = errText;
+        }
+        throw new Error(errMsg);
       }
 
       // Reset form
@@ -113,7 +120,8 @@ export default function HomeScreen() {
       refetch();
     } catch (err) {
       console.error("Upload failed:", err);
-      setUploadProgress("Upload failed. Please try again.");
+      const msg = err instanceof Error ? err.message : "Upload failed. Please try again.";
+      setUploadProgress(`❌ ${msg}`);
     } finally {
       setUploading(false);
     }
