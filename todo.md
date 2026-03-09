@@ -106,3 +106,11 @@
 - [x] Update suggestion card UI to show occurrence count badge (e.g. "×7 occurrences")
 - [x] Update suggestion card UI to show rank number (#1, #2, #3, #4) with color-coded circles
 - [x] Sort suggestions by occurrence_count descending before rendering (server-side + client-side guard)
+
+## Game Stats + Strategy Summary
+- [x] Update AI prompt to return game stats (forehand, backhand, lob, drop, drive, boast, serve counts)
+- [x] Update AI prompt to return a strategy summary paragraph
+- [x] Update server to store gameStats and strategySummary in analysisResults JSON
+- [x] Build GameStatsPanel UI component (grid of stat cards with icon + count + label)
+- [x] Build StrategySummary UI section (card with paragraph text)
+- [x] Restructure video detail page: Stats → Strategy → Top 4 Improvements

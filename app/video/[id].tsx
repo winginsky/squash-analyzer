@@ -91,6 +91,28 @@ function ThumbnailClip({
   );
 }
 
+type GameStats = {
+  forehand?: number;
+  backhand?: number;
+  lob?: number;
+  drop?: number;
+  drive?: number;
+  boast?: number;
+  volley?: number;
+  serve?: number;
+};
+
+const STAT_ITEMS: { key: keyof GameStats; label: string; icon: string }[] = [
+  { key: "forehand",  label: "Forehand",  icon: "🏸" },
+  { key: "backhand",  label: "Backhand",  icon: "🔄" },
+  { key: "drive",     label: "Drive",     icon: "⚡" },
+  { key: "lob",       label: "Lob",       icon: "🌙" },
+  { key: "drop",      label: "Drop",      icon: "💧" },
+  { key: "boast",     label: "Boast",     icon: "↗" },
+  { key: "volley",    label: "Volley",    icon: "✊" },
+  { key: "serve",     label: "Serve",     icon: "🎯" },
+];
+
 type Suggestion = {
   id?: string;
   category: "technique" | "positioning" | "shot-selection" | "movement";
@@ -342,10 +364,23 @@ export default function VideoDetailScreen() {
   }, [isAnalyzing, refetch]);
 
   const videoUrl = videoData?.videoUrl || "";
+
   const suggestions: Suggestion[] = useMemo(() => {
     if (!videoData?.analysisResults) return [];
     const results = videoData.analysisResults as { suggestions?: Suggestion[] };
     return results.suggestions || [];
+  }, [videoData]);
+
+  const gameStats: GameStats | null = useMemo(() => {
+    if (!videoData?.analysisResults) return null;
+    const results = videoData.analysisResults as { gameStats?: GameStats };
+    return results.gameStats ?? null;
+  }, [videoData]);
+
+  const strategySummary: string | null = useMemo(() => {
+    if (!videoData?.analysisResults) return null;
+    const results = videoData.analysisResults as { strategySummary?: string };
+    return results.strategySummary ?? null;
   }, [videoData]);
 
   // Ref to the main web <video> element for seeking
@@ -530,6 +565,61 @@ export default function VideoDetailScreen() {
           {isLoading && (
             <View className="px-6 pb-6">
               <Text className="text-muted text-center">Loading analysis…</Text>
+            </View>
+          )}
+
+          {/* Game Stats Panel */}
+          {gameStats && (
+            <View className="px-6 mb-4">
+              <Text className="text-xl font-bold text-foreground mb-1">Game Stats</Text>
+              <Text className="text-sm text-muted mb-4">Shot counts observed across the video</Text>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
+                {STAT_ITEMS.filter(item => (gameStats[item.key] ?? 0) > 0).map(item => (
+                  <View
+                    key={item.key}
+                    style={{
+                      backgroundColor: colors.surface,
+                      borderRadius: 14,
+                      borderWidth: 1,
+                      borderColor: colors.border,
+                      paddingHorizontal: 14,
+                      paddingVertical: 10,
+                      alignItems: "center",
+                      minWidth: 80,
+                      flex: 1,
+                    }}
+                  >
+                    <Text style={{ fontSize: 22, marginBottom: 4 }}>{item.icon}</Text>
+                    <Text style={{ fontSize: 22, fontWeight: "800", color: colors.primary }}>
+                      {gameStats[item.key] ?? 0}
+                    </Text>
+                    <Text style={{ fontSize: 11, color: colors.muted, fontWeight: "600", textTransform: "uppercase", letterSpacing: 0.3, marginTop: 2 }}>
+                      {item.label}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {/* Strategy Summary */}
+          {strategySummary && (
+            <View className="px-6 mb-4">
+              <View style={{
+                backgroundColor: colors.surface,
+                borderRadius: 16,
+                borderWidth: 1,
+                borderColor: colors.border,
+                padding: 16,
+                borderLeftWidth: 4,
+                borderLeftColor: colors.primary,
+              }}>
+                <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}>
+                  <Text style={{ fontSize: 20, marginRight: 8 }}>🧠</Text>
+                  <Text style={{ fontSize: 16, fontWeight: "700", color: colors.foreground }}>Strategy Overview</Text>
+                </View>
+                <Text style={{ fontSize: 14, color: colors.muted, lineHeight: 22 }}>{strategySummary}</Text>
+              </View>
             </View>
           )}
 

@@ -61,15 +61,36 @@ Choose frames that together form a meaningful clip showing the issue.
 
 Return EXACTLY 4 suggestions (or fewer if fewer than 4 distinct issues exist), sorted by occurrence_count descending.
 
-Return your analysis as a JSON object with this structure:
-{"suggestions": [{"category": "technique|positioning|shot-selection|movement", "title": "string", "description": "string", "severity": "warning|error", "occurrence_count": <integer>, "frame_index": <1-based start frame>, "end_frame_index": <1-based end frame>}]}`,
+Also count the player's shots by type across all frames and write a brief strategy summary.
+
+Return your analysis as a JSON object with this EXACT structure:
+{
+  "gameStats": {
+    "forehand": <integer count>,
+    "backhand": <integer count>,
+    "lob": <integer count>,
+    "drop": <integer count>,
+    "drive": <integer count>,
+    "boast": <integer count>,
+    "volley": <integer count>,
+    "serve": <integer count>
+  },
+  "strategySummary": "<2-3 sentence paragraph describing the player's overall game style, court usage, and tactical tendencies observed across the video>",
+  "suggestions": [{"category": "technique|positioning|shot-selection|movement", "title": "string", "description": "string", "severity": "warning|error", "occurrence_count": <integer>, "frame_index": <1-based start frame>, "end_frame_index": <1-based end frame>}]
+}`,
         },
         {
           role: "user",
           content: [
             {
               type: "text" as const,
-              text: `Analyze these ${frames.length} frames from a squash game video. Identify the TOP 4 most frequent improvement areas for the player, counted by how many times each problem appears across the frames. Return them ranked by occurrence_count (most frequent first). For each suggestion, reference the specific frame numbers that best illustrate the behavior.`,
+              text: `Analyze these ${frames.length} frames from a squash game video.
+
+1. Count the player's shots by type (forehand, backhand, lob, drop, drive, boast, volley, serve) across all frames.
+2. Write a 2-3 sentence strategy summary describing the player's overall style, court usage, and tactical tendencies.
+3. Identify the TOP 4 most frequent improvement areas, counted by how many times each problem appears across the frames. Return them ranked by occurrence_count (most frequent first). For each suggestion, reference the specific frame numbers that best illustrate the behavior.
+
+Return the full JSON with gameStats, strategySummary, and suggestions.`,
             },
             ...imageContentParts,
           ],
@@ -97,6 +118,10 @@ Return your analysis as a JSON object with this structure:
       .sort((a, b) => (b.occurrence_count ?? 0) - (a.occurrence_count ?? 0))
       .slice(0, 4);
 
+    // Extract gameStats and strategySummary from AI response
+    const gameStats = analysisData.gameStats ?? null;
+    const strategySummary = (analysisData.strategySummary as string) ?? null;
+
     const suggestions = sortedSuggestions.map((s) => {
       const startIdx = Math.max(0, Math.min((s.frame_index ?? 1) - 1, frames.length - 1));
       // end_frame_index defaults to start + 1 frame (or same frame if at the end)
@@ -118,7 +143,7 @@ Return your analysis as a JSON object with this structure:
       };
     });
 
-    return { suggestions };
+    return { gameStats, strategySummary, suggestions };
   } catch (error) {
     console.error("Video analysis failed:", error);
     throw new Error("Failed to analyze video");
@@ -196,7 +221,7 @@ export const appRouter = router({
 
         // Start analysis asynchronously (don't await)
         analyzeSquashVideoPublic(videoUrl, input.playerName, input.playerDescription)
-          .then(async (results: { suggestions: unknown[] }) => {
+          .then(async (results: { gameStats: unknown; strategySummary: string; suggestions: unknown[] }) => {
             await db.updateVideoAnalysis(videoId, {
               status: "complete",
               analysisResults: results,
@@ -233,7 +258,7 @@ export const appRouter = router({
 
         // Re-run analysis asynchronously
         analyzeSquashVideoPublic(existing.videoUrl, existing.playerName ?? undefined, existing.playerDescription ?? undefined)
-          .then(async (results: { suggestions: unknown[] }) => {
+          .then(async (results: { gameStats: unknown; strategySummary: string; suggestions: unknown[] }) => {
             await db.updateVideoAnalysis(input.id, {
               status: "complete",
               analysisResults: results,
