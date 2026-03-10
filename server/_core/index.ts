@@ -139,7 +139,7 @@ async function startServer() {
 
         // Run analysis asynchronously after responding
         analyzeSquashVideoPublic(videoUrl, playerName, playerDescription)
-          .then(async (results: { suggestions: unknown[] }) => {
+          .then(async (results) => {
             await db.updateVideoAnalysis(videoId, {
               status: "complete",
               analysisResults: results,

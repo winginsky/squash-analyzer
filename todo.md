@@ -119,3 +119,9 @@
 - [x] Improve upload error message to show actual error detail to user
 - [x] Add try/catch around blob fetch step separately from upload step
 - [x] Verify blob type is correctly detected for all video formats
+
+## Structured Strategy Overview
+- [x] Update AI prompt: replace strategySummary string with strategyOverview object containing strategyUsed, opponentWeaknesses, strategicAdjustments
+- [x] Update server parsing to extract and store the new strategyOverview object
+- [x] Update UI to render three labeled subsections inside the Strategy Overview card
+- [x] Update type definitions in video/[id].tsx for the new structure

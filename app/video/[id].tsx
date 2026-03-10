@@ -377,10 +377,22 @@ export default function VideoDetailScreen() {
     return results.gameStats ?? null;
   }, [videoData]);
 
-  const strategySummary: string | null = useMemo(() => {
+  type StrategyOverview = {
+    strategyUsed?: string | null;
+    opponentWeaknesses?: string | null;
+    strategicAdjustments?: string | null;
+  };
+
+  const strategyOverview: StrategyOverview | null = useMemo(() => {
     if (!videoData?.analysisResults) return null;
-    const results = videoData.analysisResults as { strategySummary?: string };
-    return results.strategySummary ?? null;
+    const results = videoData.analysisResults as {
+      strategyOverview?: StrategyOverview;
+      strategySummary?: string; // legacy field
+    };
+    if (results.strategyOverview) return results.strategyOverview;
+    // Backwards-compat: old analyses stored a plain string
+    if (results.strategySummary) return { strategyUsed: results.strategySummary, opponentWeaknesses: null, strategicAdjustments: null };
+    return null;
   }, [videoData]);
 
   // Ref to the main web <video> element for seeking
@@ -602,8 +614,8 @@ export default function VideoDetailScreen() {
             </View>
           )}
 
-          {/* Strategy Summary */}
-          {strategySummary && (
+          {/* Strategy Overview */}
+          {strategyOverview && (
             <View className="px-6 mb-4">
               <View style={{
                 backgroundColor: colors.surface,
@@ -611,14 +623,55 @@ export default function VideoDetailScreen() {
                 borderWidth: 1,
                 borderColor: colors.border,
                 padding: 16,
-                borderLeftWidth: 4,
-                borderLeftColor: colors.primary,
               }}>
-                <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}>
+                {/* Header */}
+                <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 16 }}>
                   <Text style={{ fontSize: 20, marginRight: 8 }}>🧠</Text>
                   <Text style={{ fontSize: 16, fontWeight: "700", color: colors.foreground }}>Strategy Overview</Text>
                 </View>
-                <Text style={{ fontSize: 14, color: colors.muted, lineHeight: 22 }}>{strategySummary}</Text>
+
+                {/* Strategy Used */}
+                {strategyOverview.strategyUsed ? (
+                  <View style={{ marginBottom: 14 }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 6 }}>
+                      <View style={{ width: 3, height: 16, borderRadius: 2, backgroundColor: colors.primary, marginRight: 8 }} />
+                      <Text style={{ fontSize: 13, fontWeight: "700", color: colors.foreground, textTransform: "uppercase", letterSpacing: 0.5 }}>Strategy Used</Text>
+                    </View>
+                    <Text style={{ fontSize: 14, color: colors.muted, lineHeight: 22 }}>{strategyOverview.strategyUsed}</Text>
+                  </View>
+                ) : null}
+
+                {/* Divider */}
+                {strategyOverview.strategyUsed && strategyOverview.opponentWeaknesses ? (
+                  <View style={{ height: 1, backgroundColor: colors.border, marginBottom: 14 }} />
+                ) : null}
+
+                {/* Opponent Weaknesses */}
+                {strategyOverview.opponentWeaknesses ? (
+                  <View style={{ marginBottom: 14 }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 6 }}>
+                      <View style={{ width: 3, height: 16, borderRadius: 2, backgroundColor: colors.warning, marginRight: 8 }} />
+                      <Text style={{ fontSize: 13, fontWeight: "700", color: colors.foreground, textTransform: "uppercase", letterSpacing: 0.5 }}>Opponent Weaknesses</Text>
+                    </View>
+                    <Text style={{ fontSize: 14, color: colors.muted, lineHeight: 22 }}>{strategyOverview.opponentWeaknesses}</Text>
+                  </View>
+                ) : null}
+
+                {/* Divider */}
+                {strategyOverview.opponentWeaknesses && strategyOverview.strategicAdjustments ? (
+                  <View style={{ height: 1, backgroundColor: colors.border, marginBottom: 14 }} />
+                ) : null}
+
+                {/* Strategic Adjustments */}
+                {strategyOverview.strategicAdjustments ? (
+                  <View>
+                    <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 6 }}>
+                      <View style={{ width: 3, height: 16, borderRadius: 2, backgroundColor: colors.success, marginRight: 8 }} />
+                      <Text style={{ fontSize: 13, fontWeight: "700", color: colors.foreground, textTransform: "uppercase", letterSpacing: 0.5 }}>Strategic Adjustments</Text>
+                    </View>
+                    <Text style={{ fontSize: 14, color: colors.muted, lineHeight: 22 }}>{strategyOverview.strategicAdjustments}</Text>
+                  </View>
+                ) : null}
               </View>
             </View>
           )}

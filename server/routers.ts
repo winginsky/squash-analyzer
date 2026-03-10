@@ -61,7 +61,7 @@ Choose frames that together form a meaningful clip showing the issue.
 
 Return EXACTLY 4 suggestions (or fewer if fewer than 4 distinct issues exist), sorted by occurrence_count descending.
 
-Also count the player's shots by type across all frames and write a brief strategy summary.
+Also count the player's shots by type across all frames and produce a structured strategy overview.
 
 Return your analysis as a JSON object with this EXACT structure:
 {
@@ -75,7 +75,11 @@ Return your analysis as a JSON object with this EXACT structure:
     "volley": <integer count>,
     "serve": <integer count>
   },
-  "strategySummary": "<2-3 sentence paragraph describing the player's overall game style, court usage, and tactical tendencies observed across the video>",
+  "strategyOverview": {
+    "strategyUsed": "<2-3 sentences describing the player's overall tactical approach, court positioning, and shot selection patterns observed across the video>",
+    "opponentWeaknesses": "<2-3 sentences identifying weaknesses or patterns in the opponent's game that the analyzed player could or did exploit>",
+    "strategicAdjustments": "<2-3 sentences of concrete suggestions for how the player should change or improve their strategy to be more effective>"
+  },
   "suggestions": [{"category": "technique|positioning|shot-selection|movement", "title": "string", "description": "string", "severity": "warning|error", "occurrence_count": <integer>, "frame_index": <1-based start frame>, "end_frame_index": <1-based end frame>}]
 }`,
         },
@@ -87,10 +91,13 @@ Return your analysis as a JSON object with this EXACT structure:
               text: `Analyze these ${frames.length} frames from a squash game video.
 
 1. Count the player's shots by type (forehand, backhand, lob, drop, drive, boast, volley, serve) across all frames.
-2. Write a 2-3 sentence strategy summary describing the player's overall style, court usage, and tactical tendencies.
+2. Produce a strategyOverview with three fields:
+   - strategyUsed: describe the player's overall tactical approach, court positioning, and shot selection patterns
+   - opponentWeaknesses: identify weaknesses or exploitable patterns in the opponent's game
+   - strategicAdjustments: give concrete suggestions for how the player should change or improve their strategy
 3. Identify the TOP 4 most frequent improvement areas, counted by how many times each problem appears across the frames. Return them ranked by occurrence_count (most frequent first). For each suggestion, reference the specific frame numbers that best illustrate the behavior.
 
-Return the full JSON with gameStats, strategySummary, and suggestions.`,
+Return the full JSON with gameStats, strategyOverview, and suggestions.`,
             },
             ...imageContentParts,
           ],
@@ -118,9 +125,14 @@ Return the full JSON with gameStats, strategySummary, and suggestions.`,
       .sort((a, b) => (b.occurrence_count ?? 0) - (a.occurrence_count ?? 0))
       .slice(0, 4);
 
-    // Extract gameStats and strategySummary from AI response
+    // Extract gameStats and strategyOverview from AI response
     const gameStats = analysisData.gameStats ?? null;
-    const strategySummary = (analysisData.strategySummary as string) ?? null;
+    // Support both old (strategySummary string) and new (strategyOverview object) formats
+    const strategyOverview = analysisData.strategyOverview ?? (
+      analysisData.strategySummary
+        ? { strategyUsed: analysisData.strategySummary, opponentWeaknesses: null, strategicAdjustments: null }
+        : null
+    );
 
     const suggestions = sortedSuggestions.map((s) => {
       const startIdx = Math.max(0, Math.min((s.frame_index ?? 1) - 1, frames.length - 1));
@@ -143,7 +155,7 @@ Return the full JSON with gameStats, strategySummary, and suggestions.`,
       };
     });
 
-    return { gameStats, strategySummary, suggestions };
+    return { gameStats, strategyOverview, suggestions };
   } catch (error) {
     console.error("Video analysis failed:", error);
     throw new Error("Failed to analyze video");
@@ -221,7 +233,7 @@ export const appRouter = router({
 
         // Start analysis asynchronously (don't await)
         analyzeSquashVideoPublic(videoUrl, input.playerName, input.playerDescription)
-          .then(async (results: { gameStats: unknown; strategySummary: string; suggestions: unknown[] }) => {
+          .then(async (results) => {
             await db.updateVideoAnalysis(videoId, {
               status: "complete",
               analysisResults: results,
@@ -258,7 +270,7 @@ export const appRouter = router({
 
         // Re-run analysis asynchronously
         analyzeSquashVideoPublic(existing.videoUrl, existing.playerName ?? undefined, existing.playerDescription ?? undefined)
-          .then(async (results: { gameStats: unknown; strategySummary: string; suggestions: unknown[] }) => {
+          .then(async (results) => {
             await db.updateVideoAnalysis(input.id, {
               status: "complete",
               analysisResults: results,
