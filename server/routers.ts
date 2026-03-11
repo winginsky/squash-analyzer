@@ -66,14 +66,19 @@ Also count the player's shots by type across all frames and produce a structured
 Return your analysis as a JSON object with this EXACT structure:
 {
   "gameStats": {
-    "forehand": <integer count>,
-    "backhand": <integer count>,
-    "lob": <integer count>,
-    "drop": <integer count>,
-    "drive": <integer count>,
-    "boast": <integer count>,
-    "volley": <integer count>,
-    "serve": <integer count>
+    "totalShots": <estimated total shots played by the analyzed player>,
+    "totalRallies": <estimated total number of rallies in the video>,
+    "avgRallyLength": <estimated average shots per rally as a decimal, e.g. 8.5>,
+    "shortRallyWinPct": <estimated percentage (0-100) of short rallies (0-4 shots) won by the analyzed player, or null if unknown>,
+    "longRallyWinPct": <estimated percentage (0-100) of long rallies (9+ shots) won by the analyzed player, or null if unknown>,
+    "forehand": { "count": <integer>, "winners": <integer>, "unforcedErrors": <integer>, "forcedErrors": <integer> },
+    "backhand": { "count": <integer>, "winners": <integer>, "unforcedErrors": <integer>, "forcedErrors": <integer> },
+    "drive":    { "count": <integer>, "winners": <integer>, "unforcedErrors": <integer>, "forcedErrors": <integer> },
+    "drop":     { "count": <integer>, "winners": <integer>, "unforcedErrors": <integer>, "forcedErrors": <integer> },
+    "lob":      { "count": <integer>, "winners": <integer>, "unforcedErrors": <integer>, "forcedErrors": <integer> },
+    "boast":    { "count": <integer>, "winners": <integer>, "unforcedErrors": <integer>, "forcedErrors": <integer> },
+    "volley":   { "count": <integer>, "winners": <integer>, "unforcedErrors": <integer>, "forcedErrors": <integer> },
+    "serve":    { "count": <integer>, "winners": <integer>, "unforcedErrors": <integer>, "forcedErrors": <integer> }
   },
   "strategyOverview": {
     "strategyUsed": "<2-3 sentences describing the player's overall tactical approach, court positioning, and shot selection patterns observed across the video>",
@@ -90,12 +95,13 @@ Return your analysis as a JSON object with this EXACT structure:
               type: "text" as const,
               text: `Analyze these ${frames.length} frames from a squash game video.
 
-1. Count the player's shots by type (forehand, backhand, lob, drop, drive, boast, volley, serve) across all frames.
-2. Produce a strategyOverview with three fields:
+1. Estimate the player's shot counts by type AND for each shot type estimate how many were winners, unforced errors, and forced errors.
+2. Estimate totalShots (all shots by the analyzed player), totalRallies, avgRallyLength (shots per rally), shortRallyWinPct (% of 0-4 shot rallies won), and longRallyWinPct (% of 9+ shot rallies won). Use null for win percentages if you cannot estimate them.
+3. Produce a strategyOverview with three fields:
    - strategyUsed: describe the player's overall tactical approach, court positioning, and shot selection patterns
    - opponentWeaknesses: identify weaknesses or exploitable patterns in the opponent's game
    - strategicAdjustments: give concrete suggestions for how the player should change or improve their strategy
-3. Identify the TOP 4 most frequent improvement areas, counted by how many times each problem appears across the frames. Return them ranked by occurrence_count (most frequent first). For each suggestion, reference the specific frame numbers that best illustrate the behavior.
+4. Identify the TOP 4 most frequent improvement areas, counted by how many times each problem appears across the frames. Return them ranked by occurrence_count (most frequent first). For each suggestion, reference the specific frame numbers that best illustrate the behavior.
 
 Return the full JSON with gameStats, strategyOverview, and suggestions.`,
             },

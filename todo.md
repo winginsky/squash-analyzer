@@ -125,3 +125,15 @@
 - [x] Update server parsing to extract and store the new strategyOverview object
 - [x] Update UI to render three labeled subsections inside the Strategy Overview card
 - [x] Update type definitions in video/[id].tsx for the new structure
+
+## Section 1 — Game Stats Improvements
+- [x] 1.1 Update AI prompt: add winner/unforced error/forced error breakdown per shot type
+- [x] 1.2 Update AI prompt: add totalShots, totalRallies summary fields
+- [x] 1.3 Update AI prompt: add avgRallyLength field
+- [x] 1.4 Update AI prompt: add shortRallyWinPct and longRallyWinPct fields
+- [x] 1.5 Update server parsing and DB storage for new stats fields
+- [x] 1.6 Replace emoji icons with MaterialIcons in stats cards
+- [x] 1.7 Add winner/error breakdown badge row under each stat card count
+- [x] 1.8 Add summary line (total shots / rallies) above the stat grid
+- [x] 1.9 Add rally length row (avg + short/long win rate) below the stat grid
+- [x] 1.10 Add horizontal shot distribution bar below the stat grid

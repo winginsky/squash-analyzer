@@ -4,6 +4,7 @@ import { trpc } from "@/lib/trpc";
 import { ScrollView, Text, View, TouchableOpacity } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { VideoView, useVideoPlayer } from "expo-video";
+import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { useColors } from "@/hooks/use-colors";
@@ -91,26 +92,51 @@ function ThumbnailClip({
   );
 }
 
-type GameStats = {
-  forehand?: number;
-  backhand?: number;
-  lob?: number;
-  drop?: number;
-  drive?: number;
-  boast?: number;
-  volley?: number;
-  serve?: number;
+// ─── Shot stat types ─────────────────────────────────────────────────────────
+type ShotStat = {
+  count: number;
+  winners?: number | null;
+  unforcedErrors?: number | null;
+  forcedErrors?: number | null;
 };
 
-const STAT_ITEMS: { key: keyof GameStats; label: string; icon: string }[] = [
-  { key: "forehand",  label: "Forehand",  icon: "🏸" },
-  { key: "backhand",  label: "Backhand",  icon: "🔄" },
-  { key: "drive",     label: "Drive",     icon: "⚡" },
-  { key: "lob",       label: "Lob",       icon: "🌙" },
-  { key: "drop",      label: "Drop",      icon: "💧" },
-  { key: "boast",     label: "Boast",     icon: "↗" },
-  { key: "volley",    label: "Volley",    icon: "✊" },
-  { key: "serve",     label: "Serve",     icon: "🎯" },
+type GameStats = {
+  // Summary fields
+  totalShots?: number | null;
+  totalRallies?: number | null;
+  avgRallyLength?: number | null;
+  shortRallyWinPct?: number | null;
+  longRallyWinPct?: number | null;
+  // Shot type breakdown — new format (object) or legacy (number)
+  forehand?: ShotStat | number | null;
+  backhand?: ShotStat | number | null;
+  drive?:    ShotStat | number | null;
+  drop?:     ShotStat | number | null;
+  lob?:      ShotStat | number | null;
+  boast?:    ShotStat | number | null;
+  volley?:   ShotStat | number | null;
+  serve?:    ShotStat | number | null;
+};
+
+type ShotKey = "forehand" | "backhand" | "drive" | "drop" | "lob" | "boast" | "volley" | "serve";
+
+/** Normalise a shot stat field — handles both new object format and legacy number */
+function normaliseShotStat(val: ShotStat | number | null | undefined): ShotStat | null {
+  if (val == null) return null;
+  if (typeof val === "number") return val > 0 ? { count: val } : null;
+  if (typeof val === "object" && val.count > 0) return val;
+  return null;
+}
+
+const STAT_ITEMS: { key: ShotKey; label: string; matIcon: string }[] = [
+  { key: "forehand",  label: "Forehand",  matIcon: "sports-tennis" },
+  { key: "backhand",  label: "Backhand",  matIcon: "flip" },
+  { key: "drive",     label: "Drive",     matIcon: "arrow-forward" },
+  { key: "drop",      label: "Drop",      matIcon: "arrow-downward" },
+  { key: "lob",       label: "Lob",       matIcon: "arrow-upward" },
+  { key: "boast",     label: "Boast",     matIcon: "call-made" },
+  { key: "volley",    label: "Volley",    matIcon: "bolt" },
+  { key: "serve",     label: "Serve",     matIcon: "sports" },
 ];
 
 type Suggestion = {
@@ -581,38 +607,152 @@ export default function VideoDetailScreen() {
           )}
 
           {/* Game Stats Panel */}
-          {gameStats && (
-            <View className="px-6 mb-4">
-              <Text className="text-xl font-bold text-foreground mb-1">Game Stats</Text>
-              <Text className="text-sm text-muted mb-4">Shot counts observed across the video</Text>
-              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
-                {STAT_ITEMS.filter(item => (gameStats[item.key] ?? 0) > 0).map(item => (
-                  <View
-                    key={item.key}
-                    style={{
-                      backgroundColor: colors.surface,
-                      borderRadius: 14,
-                      borderWidth: 1,
-                      borderColor: colors.border,
-                      paddingHorizontal: 14,
-                      paddingVertical: 10,
-                      alignItems: "center",
-                      minWidth: 80,
-                      flex: 1,
-                    }}
-                  >
-                    <Text style={{ fontSize: 22, marginBottom: 4 }}>{item.icon}</Text>
-                    <Text style={{ fontSize: 22, fontWeight: "800", color: colors.primary }}>
-                      {gameStats[item.key] ?? 0}
-                    </Text>
-                    <Text style={{ fontSize: 11, color: colors.muted, fontWeight: "600", textTransform: "uppercase", letterSpacing: 0.3, marginTop: 2 }}>
-                      {item.label}
-                    </Text>
+          {gameStats && (() => {
+            // Normalise all shot stats to the new object format
+            const normStats = STAT_ITEMS.map(item => ({
+              ...item,
+              stat: normaliseShotStat(gameStats[item.key]),
+            })).filter(item => item.stat !== null);
+
+            // Shot distribution bar data
+            const totalForBar = normStats.reduce((s, i) => s + (i.stat?.count ?? 0), 0);
+
+            return (
+              <View className="px-6 mb-4">
+                {/* Section header */}
+                <Text style={{ fontSize: 20, fontWeight: "700", color: colors.foreground, marginBottom: 2 }}>Game Stats</Text>
+
+                {/* Summary line */}
+                {(gameStats.totalShots != null || gameStats.totalRallies != null) && (
+                  <Text style={{ fontSize: 13, color: colors.muted, marginBottom: 12 }}>
+                    {[gameStats.totalShots != null && `~${gameStats.totalShots} shots`, gameStats.totalRallies != null && `~${gameStats.totalRallies} rallies`].filter(Boolean).join(" across ")}
+                  </Text>
+                )}
+
+                {/* Shot cards grid */}
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10, marginBottom: 14 }}>
+                  {normStats.map(item => {
+                    const s = item.stat!;
+                    const hasBreakdown = (s.winners != null || s.unforcedErrors != null || s.forcedErrors != null);
+                    return (
+                      <View
+                        key={item.key}
+                        style={{
+                          backgroundColor: colors.surface,
+                          borderRadius: 14,
+                          borderWidth: 1,
+                          borderColor: colors.border,
+                          paddingHorizontal: 12,
+                          paddingVertical: 10,
+                          alignItems: "center",
+                          minWidth: 88,
+                          flex: 1,
+                        }}
+                      >
+                        {/* MaterialIcon */}
+                        <MaterialIcons
+                          name={item.matIcon as any}
+                          size={22}
+                          color={colors.primary}
+                          style={{ marginBottom: 4 }}
+                        />
+                        {/* Shot count */}
+                        <Text style={{ fontSize: 24, fontWeight: "800", color: colors.foreground, lineHeight: 28 }}>
+                          {s.count}
+                        </Text>
+                        {/* Label */}
+                        <Text style={{ fontSize: 11, color: colors.muted, fontWeight: "600", textTransform: "uppercase", letterSpacing: 0.3, marginTop: 2 }}>
+                          {item.label}
+                        </Text>
+                        {/* Winner / error breakdown badges */}
+                        {hasBreakdown && (
+                          <View style={{ flexDirection: "row", gap: 4, marginTop: 7, flexWrap: "wrap", justifyContent: "center" }}>
+                            {s.winners != null && s.winners > 0 && (
+                              <View style={{ backgroundColor: "rgba(34,197,94,0.15)", borderRadius: 6, paddingHorizontal: 5, paddingVertical: 2 }}>
+                                <Text style={{ fontSize: 10, fontWeight: "700", color: "#16A34A" }}>{s.winners}W</Text>
+                              </View>
+                            )}
+                            {s.unforcedErrors != null && s.unforcedErrors > 0 && (
+                              <View style={{ backgroundColor: "rgba(239,68,68,0.12)", borderRadius: 6, paddingHorizontal: 5, paddingVertical: 2 }}>
+                                <Text style={{ fontSize: 10, fontWeight: "700", color: "#DC2626" }}>{s.unforcedErrors}UE</Text>
+                              </View>
+                            )}
+                            {s.forcedErrors != null && s.forcedErrors > 0 && (
+                              <View style={{ backgroundColor: "rgba(245,158,11,0.12)", borderRadius: 6, paddingHorizontal: 5, paddingVertical: 2 }}>
+                                <Text style={{ fontSize: 10, fontWeight: "700", color: "#D97706" }}>{s.forcedErrors}FE</Text>
+                              </View>
+                            )}
+                          </View>
+                        )}
+                      </View>
+                    );
+                  })}
+                </View>
+
+                {/* Shot distribution bar */}
+                {totalForBar > 0 && (
+                  <View style={{ marginBottom: 14 }}>
+                    <Text style={{ fontSize: 11, color: colors.muted, fontWeight: "600", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 6 }}>Shot Distribution</Text>
+                    <View style={{ flexDirection: "row", height: 10, borderRadius: 6, overflow: "hidden", backgroundColor: colors.border }}>
+                      {normStats.map((item, idx) => {
+                        const pct = ((item.stat?.count ?? 0) / totalForBar) * 100;
+                        if (pct < 1) return null;
+                        const barColors = ["#3B82F6","#8B5CF6","#10B981","#F59E0B","#EF4444","#06B6D4","#EC4899","#84CC16"];
+                        return <View key={item.key} style={{ width: `${pct}%` as any, backgroundColor: barColors[idx % barColors.length] }} />;
+                      })}
+                    </View>
+                    {/* Legend */}
+                    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 6 }}>
+                      {normStats.map((item, idx) => {
+                        const pct = Math.round(((item.stat?.count ?? 0) / totalForBar) * 100);
+                        if (pct < 1) return null;
+                        const barColors = ["#3B82F6","#8B5CF6","#10B981","#F59E0B","#EF4444","#06B6D4","#EC4899","#84CC16"];
+                        return (
+                          <View key={item.key} style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: barColors[idx % barColors.length] }} />
+                            <Text style={{ fontSize: 11, color: colors.muted }}>{item.label} {pct}%</Text>
+                          </View>
+                        );
+                      })}
+                    </View>
                   </View>
-                ))}
+                )}
+
+                {/* Rally stats row */}
+                {(gameStats.avgRallyLength != null || gameStats.shortRallyWinPct != null || gameStats.longRallyWinPct != null) && (
+                  <View style={{
+                    backgroundColor: colors.surface,
+                    borderRadius: 14,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                    padding: 14,
+                  }}>
+                    <Text style={{ fontSize: 11, color: colors.muted, fontWeight: "600", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 10 }}>Rally Stats</Text>
+                    <View style={{ flexDirection: "row", gap: 12 }}>
+                      {gameStats.avgRallyLength != null && (
+                        <View style={{ flex: 1, alignItems: "center" }}>
+                          <Text style={{ fontSize: 22, fontWeight: "800", color: colors.foreground }}>{gameStats.avgRallyLength.toFixed(1)}</Text>
+                          <Text style={{ fontSize: 11, color: colors.muted, textAlign: "center", marginTop: 2 }}>Avg shots{"\n"}per rally</Text>
+                        </View>
+                      )}
+                      {gameStats.shortRallyWinPct != null && (
+                        <View style={{ flex: 1, alignItems: "center" }}>
+                          <Text style={{ fontSize: 22, fontWeight: "800", color: colors.success }}>{Math.round(gameStats.shortRallyWinPct)}%</Text>
+                          <Text style={{ fontSize: 11, color: colors.muted, textAlign: "center", marginTop: 2 }}>Short rally{"\n"}win rate</Text>
+                        </View>
+                      )}
+                      {gameStats.longRallyWinPct != null && (
+                        <View style={{ flex: 1, alignItems: "center" }}>
+                          <Text style={{ fontSize: 22, fontWeight: "800", color: colors.primary }}>{Math.round(gameStats.longRallyWinPct)}%</Text>
+                          <Text style={{ fontSize: 11, color: colors.muted, textAlign: "center", marginTop: 2 }}>Long rally{"\n"}win rate</Text>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                )}
               </View>
-            </View>
-          )}
+            );
+          })()}
 
           {/* Strategy Overview */}
           {strategyOverview && (
