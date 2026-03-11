@@ -86,7 +86,22 @@ Return your analysis as a JSON object with this EXACT structure:
     "opponentWeaknesses": ["<bullet: an exploitable weakness in the opponent's game>", "<bullet: another weakness or pattern>"],
     "strategicAdjustments": ["<bullet: concrete change the player should make>", "<bullet: another adjustment>", "<bullet: third adjustment if applicable>"]
   },
-  "suggestions": [{"category": "technique|positioning|shot-selection|movement", "title": "string", "description": "string", "severity": "warning|error", "occurrence_count": <integer>, "frame_index": <1-based start frame>, "end_frame_index": <1-based end frame>}]
+  "performanceScore": <integer 0-100 overall performance score for the analyzed player>,
+  "performanceGrade": "<A|B|C|D — A=excellent, B=good, C=needs work, D=significant issues>",
+  "suggestions": [
+    {
+      "category": "technique|positioning|shot-selection|movement",
+      "title": "string",
+      "description": "string",
+      "severity": "warning|error",
+      "occurrence_count": <integer>,
+      "impactEstimate": "<one sentence: why fixing this matters, e.g. 'Addressing this could reduce unforced errors by ~30% and win 3-4 extra points per game'>",
+      "drill": "<one specific named drill the player can do in their next training session to fix this issue, e.g. 'Straight drive consistency — 20 consecutive drives from the back-left corner targeting the back-wall nick'>",
+      "frame_indices": [<1-based frame number>, <optional 2nd frame>, <optional 3rd frame>],
+      "frame_index": <same as first element of frame_indices, for backwards compat>,
+      "end_frame_index": <1-based end frame>
+    }
+  ]
 }`,
         },
         {
@@ -103,7 +118,13 @@ Return your analysis as a JSON object with this EXACT structure:
    - strategyUsed: 2-3 bullets describing tactical approach, court positioning, and shot selection patterns
    - opponentWeaknesses: 2-3 bullets identifying exploitable weaknesses or patterns in the opponent's game
    - strategicAdjustments: 2-3 concrete, actionable bullets for how the player should change or improve their strategy
-4. Identify the TOP 4 most frequent improvement areas, counted by how many times each problem appears across the frames. Return them ranked by occurrence_count (most frequent first). For each suggestion, reference the specific frame numbers that best illustrate the behavior.
+4. Identify the TOP 4 most frequent improvement areas, counted by how many times each problem appears across the frames. Return them ranked by occurrence_count (most frequent first). For each suggestion:
+   - frame_indices: provide up to 3 frame numbers (1-based) that best illustrate the issue at different moments
+   - frame_index: same as the first element of frame_indices (for backwards compatibility)
+   - end_frame_index: the last frame where the issue is visible
+   - impactEstimate: one sentence explaining why fixing this matters (e.g. estimated points saved)
+   - drill: one specific named drill the player can do in their next training session
+5. Provide an overall performanceScore (0-100) and performanceGrade (A/B/C/D) for the analyzed player.
 
 Return the full JSON with gameStats, strategyOverview, and suggestions.`,
             },
@@ -127,7 +148,10 @@ Return the full JSON with gameStats, strategyOverview, and suggestions.`,
       severity: string;
       occurrence_count?: number;
       frame_index?: number;
+      frame_indices?: number[];
       end_frame_index?: number;
+      impactEstimate?: string;
+      drill?: string;
     }>;
     const sortedSuggestions = rawSuggestions
       .sort((a, b) => (b.occurrence_count ?? 0) - (a.occurrence_count ?? 0))
@@ -143,18 +167,34 @@ Return the full JSON with gameStats, strategyOverview, and suggestions.`,
     );
 
     const suggestions = sortedSuggestions.map((s) => {
-      const startIdx = Math.max(0, Math.min((s.frame_index ?? 1) - 1, frames.length - 1));
-      // end_frame_index defaults to start + 1 frame (or same frame if at the end)
+      // Resolve primary frame index (first of frame_indices, or frame_index, or 1)
+      const frameIndicesRaw: number[] = Array.isArray(s.frame_indices) && s.frame_indices.length > 0
+        ? s.frame_indices
+        : s.frame_index != null ? [s.frame_index] : [1];
+
+      const startIdx = Math.max(0, Math.min(frameIndicesRaw[0] - 1, frames.length - 1));
       const rawEndIdx = s.end_frame_index != null ? s.end_frame_index - 1 : startIdx + 1;
       const endIdx = Math.max(startIdx, Math.min(rawEndIdx, frames.length - 1));
       const startFrame = frames[startIdx];
       const endFrame = frames[endIdx];
+
+      // Build array of up to 3 frame snapshots
+      const frameSnapshots = frameIndicesRaw.slice(0, 3).map((fi) => {
+        const idx = Math.max(0, Math.min(fi - 1, frames.length - 1));
+        const f = frames[idx];
+        return f ? { url: f.url, timestampSec: f.timestampSec, timestamp: formatTimestamp(f.timestampSec) } : null;
+      }).filter(Boolean);
+
       return {
         category: s.category,
         title: s.title,
         description: s.description,
         severity: s.severity,
         occurrenceCount: s.occurrence_count ?? null,
+        impactEstimate: s.impactEstimate ?? null,
+        drill: s.drill ?? null,
+        frameSnapshots,
+        // Legacy single-frame fields for backwards compat
         frameUrl: startFrame?.url ?? null,
         frameTimestamp: startFrame ? formatTimestamp(startFrame.timestampSec) : null,
         frameTimestampSec: startFrame?.timestampSec ?? null,
@@ -163,7 +203,10 @@ Return the full JSON with gameStats, strategyOverview, and suggestions.`,
       };
     });
 
-    return { gameStats, strategyOverview, suggestions };
+    const performanceScore = analysisData.performanceScore ?? null;
+    const performanceGrade = analysisData.performanceGrade ?? null;
+
+    return { gameStats, strategyOverview, suggestions, performanceScore, performanceGrade };
   } catch (error) {
     console.error("Video analysis failed:", error);
     throw new Error("Failed to analyze video");

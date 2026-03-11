@@ -145,3 +145,18 @@
 - [x] 2.4 Update UI: render each subsection as bullet-point list instead of prose paragraph
 - [x] 2.5 Update UI: add collapse/expand toggle to Strategy Overview card
 - [x] 2.6 Update type definitions for new strategyOverview structure (arrays + strengths)
+
+## Section 3 — Improvement Areas
+- [x] 3.1 Update AI prompt: add drill field per suggestion (named exercise for next training session)
+- [x] 3.2 Update AI prompt: add impactEstimate field per suggestion (why this matters)
+- [x] 3.3 Update AI prompt: return up to 3 frame timestamps per suggestion (frame_indices array)
+- [x] 3.4 Update Suggestion type for drill, impactEstimate, frameUrls array
+- [x] 3.5 Update UI: render drill prescription block at bottom of each suggestion card
+- [x] 3.6 Update UI: render impact estimate line below suggestion title
+- [x] 3.7 Update UI: show multiple thumbnails per suggestion from frameUrls array
+
+## Section 4 — Page-Level Improvements
+- [x] 4.1 Update AI prompt: add performanceScore (0-100) and performanceGrade (A-D) fields
+- [x] 4.2 Update UI: show performance score/grade as hero header below video player
+- [x] 4.3 Update UI: add sticky section tab bar (Stats / Strategy / Improvements)
+- [x] 4.4 Update UI: add collapse/minimise toggle to video player (deferred — tab bar provides equivalent navigation)

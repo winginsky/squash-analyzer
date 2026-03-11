@@ -139,6 +139,12 @@ const STAT_ITEMS: { key: ShotKey; label: string; matIcon: string }[] = [
   { key: "serve",     label: "Serve",     matIcon: "sports" },
 ];
 
+type FrameSnapshot = {
+  url: string;
+  timestampSec: number;
+  timestamp: string;
+};
+
 type Suggestion = {
   id?: string;
   category: "technique" | "positioning" | "shot-selection" | "movement";
@@ -146,6 +152,10 @@ type Suggestion = {
   description: string;
   severity: "success" | "warning" | "error";
   occurrenceCount?: number | null;
+  impactEstimate?: string | null;
+  drill?: string | null;
+  frameSnapshots?: FrameSnapshot[] | null;
+  // Legacy single-frame fields
   frameUrl?: string | null;
   frameTimestamp?: string | null;
   frameTimestampSec?: number | null;
@@ -431,6 +441,24 @@ export default function VideoDetailScreen() {
   }, [videoData]);
 
   const [strategyExpanded, setStrategyExpanded] = useState(true);
+  const [activeTab, setActiveTab] = useState<"stats" | "strategy" | "improvements">("stats");
+
+  const performanceScore: number | null = useMemo(() => {
+    if (!videoData?.analysisResults) return null;
+    const r = videoData.analysisResults as { performanceScore?: number };
+    return r.performanceScore ?? null;
+  }, [videoData]);
+
+  const performanceGrade: string | null = useMemo(() => {
+    if (!videoData?.analysisResults) return null;
+    const r = videoData.analysisResults as { performanceGrade?: string };
+    return r.performanceGrade ?? null;
+  }, [videoData]);
+
+  // Refs for section scroll-to
+  const statsRef = useRef<View | null>(null);
+  const strategyRef = useRef<View | null>(null);
+  const improvementsRef = useRef<View | null>(null);
 
   // Ref to the main web <video> element for seeking
   const mainVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -527,6 +555,102 @@ export default function VideoDetailScreen() {
             )}
           </View>
 
+          {/* Performance Score Hero */}
+          {performanceScore != null && performanceGrade != null && (() => {
+            const gradeColors: Record<string, { bg: string; text: string; ring: string }> = {
+              A: { bg: "rgba(34,197,94,0.12)",  text: "#16A34A", ring: "#22C55E" },
+              B: { bg: "rgba(59,130,246,0.12)",  text: "#1D4ED8", ring: "#3B82F6" },
+              C: { bg: "rgba(245,158,11,0.12)",  text: "#B45309", ring: "#F59E0B" },
+              D: { bg: "rgba(239,68,68,0.12)",   text: "#B91C1C", ring: "#EF4444" },
+            };
+            const gc = gradeColors[performanceGrade] ?? gradeColors["C"];
+            return (
+              <View className="px-6 mb-4">
+                <View style={{
+                  backgroundColor: gc.bg,
+                  borderRadius: 16,
+                  borderWidth: 1.5,
+                  borderColor: gc.ring + "55",
+                  padding: 16,
+                  flexDirection: "row",
+                  alignItems: "center",
+                }}>
+                  {/* Grade circle */}
+                  <View style={{
+                    width: 64, height: 64, borderRadius: 32,
+                    borderWidth: 3, borderColor: gc.ring,
+                    backgroundColor: gc.bg,
+                    alignItems: "center", justifyContent: "center",
+                    marginRight: 16,
+                  }}>
+                    <Text style={{ fontSize: 26, fontWeight: "900", color: gc.text }}>{performanceGrade}</Text>
+                  </View>
+                  {/* Score + label */}
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 28, fontWeight: "900", color: gc.text, lineHeight: 32 }}>{performanceScore}<Text style={{ fontSize: 14, fontWeight: "600", color: gc.text }}>/100</Text></Text>
+                    <Text style={{ fontSize: 13, color: gc.text, fontWeight: "600", marginTop: 2 }}>Performance Score</Text>
+                    <Text style={{ fontSize: 11, color: gc.text, opacity: 0.75, marginTop: 2 }}>
+                      {performanceGrade === "A" ? "Excellent — keep it up" :
+                       performanceGrade === "B" ? "Good — a few areas to sharpen" :
+                       performanceGrade === "C" ? "Needs work — focus on the drills below" :
+                       "Significant gaps — prioritise the top improvement areas"}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            );
+          })()}
+
+          {/* Sticky Section Tab Bar */}
+          {videoData?.status === "complete" && (gameStats || strategyOverview || suggestions.length > 0) && (
+            <View style={{
+              flexDirection: "row",
+              marginHorizontal: 24,
+              marginBottom: 16,
+              backgroundColor: colors.surface,
+              borderRadius: 12,
+              borderWidth: 1,
+              borderColor: colors.border,
+              overflow: "hidden",
+            }}>
+              {([
+                { key: "stats",        label: "Stats",       icon: "bar-chart" },
+                { key: "strategy",     label: "Strategy",    icon: "psychology" },
+                { key: "improvements", label: "Drills",      icon: "fitness-center" },
+              ] as { key: "stats" | "strategy" | "improvements"; label: string; icon: string }[]).map((tab, ti) => {
+                const isActive = activeTab === tab.key;
+                return (
+                  <TouchableOpacity
+                    key={tab.key}
+                    onPress={() => {
+                      setActiveTab(tab.key);
+                      const ref = tab.key === "stats" ? statsRef : tab.key === "strategy" ? strategyRef : improvementsRef;
+                      ref.current?.measureLayout(
+                        scrollViewRef.current as any,
+                        (_x, y) => scrollViewRef.current?.scrollTo({ y: y - 8, animated: true }),
+                        () => {}
+                      );
+                    }}
+                    style={{
+                      flex: 1,
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      paddingVertical: 10,
+                      gap: 5,
+                      backgroundColor: isActive ? colors.primary : "transparent",
+                      borderRightWidth: ti < 2 ? 1 : 0,
+                      borderRightColor: colors.border,
+                    }}
+                  >
+                    <MaterialIcons name={tab.icon as any} size={16} color={isActive ? "#fff" : colors.muted} />
+                    <Text style={{ fontSize: 13, fontWeight: "700", color: isActive ? "#fff" : colors.muted }}>{tab.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
+
           {/* Player Information */}
           {videoData && (videoData.playerName || videoData.playerDescription) && (
             <View className="px-6 mb-4">
@@ -619,6 +743,7 @@ export default function VideoDetailScreen() {
 
           {/* Game Stats Panel */}
           {gameStats && (() => {
+            // eslint-disable-next-line react-hooks/rules-of-hooks -- ref attached inside IIFE render, not a hook call
             // Normalise all shot stats to the new object format
             const normStats = STAT_ITEMS.map(item => ({
               ...item,
@@ -629,7 +754,7 @@ export default function VideoDetailScreen() {
             const totalForBar = normStats.reduce((s, i) => s + (i.stat?.count ?? 0), 0);
 
             return (
-              <View className="px-6 mb-4">
+              <View ref={statsRef} className="px-6 mb-4">
                 {/* Section header */}
                 <Text style={{ fontSize: 20, fontWeight: "700", color: colors.foreground, marginBottom: 2 }}>Game Stats</Text>
 
@@ -776,7 +901,7 @@ export default function VideoDetailScreen() {
             const visibleSections = sections.filter(s => normStrategyField(strategyOverview[s.key])?.length);
 
             return (
-              <View className="px-6 mb-4">
+              <View ref={strategyRef} className="px-6 mb-4">
                 <View style={{
                   backgroundColor: colors.surface,
                   borderRadius: 16,
@@ -834,7 +959,7 @@ export default function VideoDetailScreen() {
 
           {/* Suggestions */}
           {suggestions.length > 0 && (
-            <View className="px-6 pb-8">
+            <View ref={improvementsRef} className="px-6 pb-8">
               <Text className="text-2xl font-bold text-foreground mb-1">Top {suggestions.length} Improvement Areas</Text>
               <Text className="text-sm text-muted mb-5">
                 Ranked by how often each issue appears in the video. Tap a thumbnail to jump to that moment.
@@ -892,44 +1017,78 @@ export default function VideoDetailScreen() {
                     </View>
 
                     {/* Title row */}
-                    <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 6 }}>
                       <Text style={{ fontSize: 22, marginRight: 8 }}>{getCategoryIcon(suggestion.category)}</Text>
                       <Text style={{ fontSize: 16, fontWeight: "700", color: colors.foreground, flex: 1 }}>
                         {suggestion.title}
                       </Text>
                     </View>
 
+                    {/* Impact estimate */}
+                    {suggestion.impactEstimate ? (
+                      <View style={{ flexDirection: "row", alignItems: "flex-start", marginBottom: 8, backgroundColor: "rgba(59,130,246,0.07)", borderRadius: 8, padding: 8 }}>
+                        <MaterialIcons name="trending-up" size={14} color="#3B82F6" style={{ marginTop: 2, marginRight: 6, flexShrink: 0 }} />
+                        <Text style={{ fontSize: 12, color: "#3B82F6", lineHeight: 18, flex: 1, fontStyle: "italic" }}>{suggestion.impactEstimate}</Text>
+                      </View>
+                    ) : null}
+
                     {/* Description */}
-                    <Text style={{ fontSize: 14, color: colors.muted, lineHeight: 21 }}>
+                    <Text style={{ fontSize: 14, color: colors.muted, lineHeight: 21, marginBottom: 8 }}>
                       {suggestion.description}
                     </Text>
 
                     {/* Category label */}
-                    <Text style={{ fontSize: 11, fontWeight: "600", color: colors.muted, textTransform: "uppercase", marginTop: 8, letterSpacing: 0.5 }}>
+                    <Text style={{ fontSize: 11, fontWeight: "600", color: colors.muted, textTransform: "uppercase", letterSpacing: 0.5 }}>
                       {suggestion.category.replace("-", " ")}
                     </Text>
 
-                    {/* Thumbnail clip strip — shown when a frame image is available */}
-                    {hasSec && suggestion.frameUrl && suggestion.frameTimestamp ? (
-                      <View style={{ marginTop: 14 }}>
-                        <Text style={{ fontSize: 11, color: colors.muted, fontWeight: "600", marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 }}>
-                          Example — tap to jump to this moment
-                        </Text>
-                        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                          <ThumbnailClip
-                            frameUrl={suggestion.frameUrl}
-                            frameTimestamp={suggestion.frameTimestamp}
-                            endFrameTimestamp={suggestion.endFrameTimestamp}
-                            timestampSec={suggestion.frameTimestampSec!}
-                            endTimestampSec={suggestion.endFrameTimestampSec}
-                            onPress={seekMainVideo}
-                            colors={colors}
-                          />
-                        </ScrollView>
-                      </View>
-                    ) : suggestion.frameTimestamp ? (
-                      <View style={{ marginTop: 10, flexDirection: "row", alignItems: "center" }}>
-                        <Text style={{ fontSize: 12, color: colors.muted }}>⏱ Occurs at {suggestion.frameTimestamp}</Text>
+                    {/* Thumbnail clip strip — multiple snapshots if available */}
+                    {(() => {
+                      const snapshots = suggestion.frameSnapshots?.length
+                        ? suggestion.frameSnapshots
+                        : hasSec && suggestion.frameUrl && suggestion.frameTimestamp
+                          ? [{ url: suggestion.frameUrl, timestampSec: suggestion.frameTimestampSec!, timestamp: suggestion.frameTimestamp }]
+                          : [];
+                      if (snapshots.length === 0) {
+                        return suggestion.frameTimestamp ? (
+                          <View style={{ marginTop: 10, flexDirection: "row", alignItems: "center" }}>
+                            <Text style={{ fontSize: 12, color: colors.muted }}>⏱ Occurs at {suggestion.frameTimestamp}</Text>
+                          </View>
+                        ) : null;
+                      }
+                      return (
+                        <View style={{ marginTop: 14 }}>
+                          <Text style={{ fontSize: 11, color: colors.muted, fontWeight: "600", marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                            {snapshots.length > 1 ? `${snapshots.length} examples — tap to jump` : "Example — tap to jump"}
+                          </Text>
+                          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                            <View style={{ flexDirection: "row", gap: 10 }}>
+                              {snapshots.map((snap, si) => (
+                                <ThumbnailClip
+                                  key={si}
+                                  frameUrl={snap.url}
+                                  frameTimestamp={snap.timestamp}
+                                  endFrameTimestamp={suggestion.endFrameTimestamp}
+                                  timestampSec={snap.timestampSec}
+                                  endTimestampSec={si === 0 ? suggestion.endFrameTimestampSec : undefined}
+                                  onPress={seekMainVideo}
+                                  colors={colors}
+                                />
+                              ))}
+                            </View>
+                          </ScrollView>
+                        </View>
+                      );
+                    })()}
+
+                    {/* Drill prescription */}
+                    {suggestion.drill ? (
+                      <View style={{ marginTop: 14, backgroundColor: colors.surface, borderRadius: 10, borderWidth: 1, borderColor: colors.border, padding: 12 }}>
+                        <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 6 }}>
+                          <MaterialIcons name="fitness-center" size={14} color={colors.success} style={{ marginRight: 6 }} />
+                          <Text style={{ fontSize: 11, fontWeight: "700", color: colors.success, textTransform: "uppercase", letterSpacing: 0.5 }}>Drill</Text>
+                        </View>
+                        <Text style={{ fontSize: 13, color: colors.foreground, lineHeight: 20 }}>{suggestion.drill}</Text>
                       </View>
                     ) : null}
                   </View>
