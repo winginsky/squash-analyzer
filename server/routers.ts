@@ -81,9 +81,10 @@ Return your analysis as a JSON object with this EXACT structure:
     "serve":    { "count": <integer>, "winners": <integer>, "unforcedErrors": <integer>, "forcedErrors": <integer> }
   },
   "strategyOverview": {
-    "strategyUsed": "<2-3 sentences describing the player's overall tactical approach, court positioning, and shot selection patterns observed across the video>",
-    "opponentWeaknesses": "<2-3 sentences identifying weaknesses or patterns in the opponent's game that the analyzed player could or did exploit>",
-    "strategicAdjustments": "<2-3 sentences of concrete suggestions for how the player should change or improve their strategy to be more effective>"
+    "strengths": ["<bullet: something the player is already doing well>", "<bullet: another strength>"],
+    "strategyUsed": ["<bullet: tactical approach or court positioning>", "<bullet: shot selection pattern>", "<bullet: another pattern if observed>"],
+    "opponentWeaknesses": ["<bullet: an exploitable weakness in the opponent's game>", "<bullet: another weakness or pattern>"],
+    "strategicAdjustments": ["<bullet: concrete change the player should make>", "<bullet: another adjustment>", "<bullet: third adjustment if applicable>"]
   },
   "suggestions": [{"category": "technique|positioning|shot-selection|movement", "title": "string", "description": "string", "severity": "warning|error", "occurrence_count": <integer>, "frame_index": <1-based start frame>, "end_frame_index": <1-based end frame>}]
 }`,
@@ -97,10 +98,11 @@ Return your analysis as a JSON object with this EXACT structure:
 
 1. Estimate the player's shot counts by type AND for each shot type estimate how many were winners, unforced errors, and forced errors.
 2. Estimate totalShots (all shots by the analyzed player), totalRallies, avgRallyLength (shots per rally), shortRallyWinPct (% of 0-4 shot rallies won), and longRallyWinPct (% of 9+ shot rallies won). Use null for win percentages if you cannot estimate them.
-3. Produce a strategyOverview with three fields:
-   - strategyUsed: describe the player's overall tactical approach, court positioning, and shot selection patterns
-   - opponentWeaknesses: identify weaknesses or exploitable patterns in the opponent's game
-   - strategicAdjustments: give concrete suggestions for how the player should change or improve their strategy
+3. Produce a strategyOverview with FOUR fields, each as an array of 2-3 short bullet strings (not prose paragraphs):
+   - strengths: 2-3 things the player is already doing well (positive reinforcement)
+   - strategyUsed: 2-3 bullets describing tactical approach, court positioning, and shot selection patterns
+   - opponentWeaknesses: 2-3 bullets identifying exploitable weaknesses or patterns in the opponent's game
+   - strategicAdjustments: 2-3 concrete, actionable bullets for how the player should change or improve their strategy
 4. Identify the TOP 4 most frequent improvement areas, counted by how many times each problem appears across the frames. Return them ranked by occurrence_count (most frequent first). For each suggestion, reference the specific frame numbers that best illustrate the behavior.
 
 Return the full JSON with gameStats, strategyOverview, and suggestions.`,

@@ -404,9 +404,18 @@ export default function VideoDetailScreen() {
   }, [videoData]);
 
   type StrategyOverview = {
-    strategyUsed?: string | null;
-    opponentWeaknesses?: string | null;
-    strategicAdjustments?: string | null;
+    strengths?: string[] | string | null;
+    strategyUsed?: string[] | string | null;
+    opponentWeaknesses?: string[] | string | null;
+    strategicAdjustments?: string[] | string | null;
+  };
+
+  /** Normalise a strategy field — handles both new array format and legacy string */
+  const normStrategyField = (val: string[] | string | null | undefined): string[] | null => {
+    if (val == null) return null;
+    if (Array.isArray(val)) return val.filter(Boolean);
+    if (typeof val === "string" && val.trim()) return [val];
+    return null;
   };
 
   const strategyOverview: StrategyOverview | null = useMemo(() => {
@@ -420,6 +429,8 @@ export default function VideoDetailScreen() {
     if (results.strategySummary) return { strategyUsed: results.strategySummary, opponentWeaknesses: null, strategicAdjustments: null };
     return null;
   }, [videoData]);
+
+  const [strategyExpanded, setStrategyExpanded] = useState(true);
 
   // Ref to the main web <video> element for seeking
   const mainVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -755,66 +766,71 @@ export default function VideoDetailScreen() {
           })()}
 
           {/* Strategy Overview */}
-          {strategyOverview && (
-            <View className="px-6 mb-4">
-              <View style={{
-                backgroundColor: colors.surface,
-                borderRadius: 16,
-                borderWidth: 1,
-                borderColor: colors.border,
-                padding: 16,
-              }}>
-                {/* Header */}
-                <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 16 }}>
-                  <Text style={{ fontSize: 20, marginRight: 8 }}>🧠</Text>
-                  <Text style={{ fontSize: 16, fontWeight: "700", color: colors.foreground }}>Strategy Overview</Text>
+          {strategyOverview && (() => {
+            const sections: { key: keyof typeof strategyOverview; label: string; accent: string; dotColor: string }[] = [
+              { key: "strengths",           label: "Strengths",            accent: colors.success, dotColor: "#16A34A" },
+              { key: "strategyUsed",        label: "Strategy Used",        accent: colors.primary, dotColor: colors.primary },
+              { key: "opponentWeaknesses",  label: "Opponent Weaknesses",  accent: colors.warning, dotColor: "#D97706" },
+              { key: "strategicAdjustments",label: "Strategic Adjustments",accent: "#8B5CF6",      dotColor: "#7C3AED" },
+            ];
+            const visibleSections = sections.filter(s => normStrategyField(strategyOverview[s.key])?.length);
+
+            return (
+              <View className="px-6 mb-4">
+                <View style={{
+                  backgroundColor: colors.surface,
+                  borderRadius: 16,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  overflow: "hidden",
+                }}>
+                  {/* Header row with collapse toggle */}
+                  <TouchableOpacity
+                    onPress={() => setStrategyExpanded(e => !e)}
+                    style={{ flexDirection: "row", alignItems: "center", padding: 16, paddingBottom: strategyExpanded ? 12 : 16 }}
+                  >
+                    <MaterialIcons name="psychology" size={22} color={colors.primary} style={{ marginRight: 8 }} />
+                    <Text style={{ fontSize: 16, fontWeight: "700", color: colors.foreground, flex: 1 }}>Strategy Overview</Text>
+                    <MaterialIcons
+                      name={strategyExpanded ? "keyboard-arrow-up" : "keyboard-arrow-down"}
+                      size={22}
+                      color={colors.muted}
+                    />
+                  </TouchableOpacity>
+
+                  {strategyExpanded && (
+                    <View style={{ paddingHorizontal: 16, paddingBottom: 16 }}>
+                      {visibleSections.map((section, idx) => {
+                        const bullets = normStrategyField(strategyOverview[section.key])!;
+                        return (
+                          <View key={section.key}>
+                            {/* Divider between sections */}
+                            {idx > 0 && <View style={{ height: 1, backgroundColor: colors.border, marginBottom: 14 }} />}
+                            {/* Section label */}
+                            <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}>
+                              <View style={{ width: 3, height: 16, borderRadius: 2, backgroundColor: section.accent, marginRight: 8 }} />
+                              <Text style={{ fontSize: 12, fontWeight: "700", color: colors.foreground, textTransform: "uppercase", letterSpacing: 0.6 }}>
+                                {section.label}
+                              </Text>
+                            </View>
+                            {/* Bullet list */}
+                            <View style={{ gap: 6, marginBottom: 14 }}>
+                              {bullets.map((bullet, bi) => (
+                                <View key={bi} style={{ flexDirection: "row", alignItems: "flex-start" }}>
+                                  <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: section.dotColor, marginTop: 7, marginRight: 10, flexShrink: 0 }} />
+                                  <Text style={{ fontSize: 14, color: colors.muted, lineHeight: 22, flex: 1 }}>{bullet}</Text>
+                                </View>
+                              ))}
+                            </View>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  )}
                 </View>
-
-                {/* Strategy Used */}
-                {strategyOverview.strategyUsed ? (
-                  <View style={{ marginBottom: 14 }}>
-                    <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 6 }}>
-                      <View style={{ width: 3, height: 16, borderRadius: 2, backgroundColor: colors.primary, marginRight: 8 }} />
-                      <Text style={{ fontSize: 13, fontWeight: "700", color: colors.foreground, textTransform: "uppercase", letterSpacing: 0.5 }}>Strategy Used</Text>
-                    </View>
-                    <Text style={{ fontSize: 14, color: colors.muted, lineHeight: 22 }}>{strategyOverview.strategyUsed}</Text>
-                  </View>
-                ) : null}
-
-                {/* Divider */}
-                {strategyOverview.strategyUsed && strategyOverview.opponentWeaknesses ? (
-                  <View style={{ height: 1, backgroundColor: colors.border, marginBottom: 14 }} />
-                ) : null}
-
-                {/* Opponent Weaknesses */}
-                {strategyOverview.opponentWeaknesses ? (
-                  <View style={{ marginBottom: 14 }}>
-                    <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 6 }}>
-                      <View style={{ width: 3, height: 16, borderRadius: 2, backgroundColor: colors.warning, marginRight: 8 }} />
-                      <Text style={{ fontSize: 13, fontWeight: "700", color: colors.foreground, textTransform: "uppercase", letterSpacing: 0.5 }}>Opponent Weaknesses</Text>
-                    </View>
-                    <Text style={{ fontSize: 14, color: colors.muted, lineHeight: 22 }}>{strategyOverview.opponentWeaknesses}</Text>
-                  </View>
-                ) : null}
-
-                {/* Divider */}
-                {strategyOverview.opponentWeaknesses && strategyOverview.strategicAdjustments ? (
-                  <View style={{ height: 1, backgroundColor: colors.border, marginBottom: 14 }} />
-                ) : null}
-
-                {/* Strategic Adjustments */}
-                {strategyOverview.strategicAdjustments ? (
-                  <View>
-                    <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 6 }}>
-                      <View style={{ width: 3, height: 16, borderRadius: 2, backgroundColor: colors.success, marginRight: 8 }} />
-                      <Text style={{ fontSize: 13, fontWeight: "700", color: colors.foreground, textTransform: "uppercase", letterSpacing: 0.5 }}>Strategic Adjustments</Text>
-                    </View>
-                    <Text style={{ fontSize: 14, color: colors.muted, lineHeight: 22 }}>{strategyOverview.strategicAdjustments}</Text>
-                  </View>
-                ) : null}
               </View>
-            </View>
-          )}
+            );
+          })()}
 
           {/* Suggestions */}
           {suggestions.length > 0 && (

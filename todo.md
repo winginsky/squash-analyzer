@@ -137,3 +137,11 @@
 - [x] 1.8 Add summary line (total shots / rallies) above the stat grid
 - [x] 1.9 Add rally length row (avg + short/long win rate) below the stat grid
 - [x] 1.10 Add horizontal shot distribution bar below the stat grid
+
+## Section 2 — Strategy Overview Improvements
+- [x] 2.1 Update AI prompt: add strengths array to strategyOverview
+- [x] 2.2 Update AI prompt: convert all four subsections from prose strings to bullet-point arrays
+- [x] 2.3 Update UI: add Strengths subsection (green accent) as first item in Strategy Overview card
+- [x] 2.4 Update UI: render each subsection as bullet-point list instead of prose paragraph
+- [x] 2.5 Update UI: add collapse/expand toggle to Strategy Overview card
+- [x] 2.6 Update type definitions for new strategyOverview structure (arrays + strengths)
