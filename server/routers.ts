@@ -185,39 +185,29 @@ Return the full JSON with gameStats, strategyOverview, and suggestions.`,
       const startFrame = frames[startIdx];
       const endFrame = frames[endIdx];
 
-      // Build array of up to 3 frame snapshots, each with its own end timestamp
-      const frameEndIndicesRaw: number[] = Array.isArray(s.frame_end_indices) && s.frame_end_indices.length > 0
-        ? s.frame_end_indices
-        : [];
+      // Build array of up to 3 frame snapshots.
+      // IMPORTANT: We deliberately ignore the AI's frame_end_indices because with only
+      // 12 frames spread across a full match, adjacent frame timestamps are 30-60s apart.
+      // The AI cannot reliably pick meaningful end frames at that resolution.
+      // Instead, we always compute endSec = startSec + CLIP_DURATION_SEC (fixed 6s clip),
+      // which gives an accurate, consistent short clip centred on the moment of interest.
+      const CLIP_DURATION_SEC = 6;
 
-      const frameSnapshots = frameIndicesRaw.slice(0, 3).map((fi, snapIdx) => {
+      const frameSnapshots = frameIndicesRaw.slice(0, 3).map((fi) => {
         const idx = Math.max(0, Math.min(fi - 1, frames.length - 1));
         const f = frames[idx];
         if (!f) return null;
 
-        // Determine end timestamp for this specific clip
-        let endSec: number;
-        const rawEndFi = frameEndIndicesRaw[snapIdx];
-        if (rawEndFi != null) {
-          const endIdx2 = Math.max(0, Math.min(rawEndFi - 1, frames.length - 1));
-          endSec = frames[endIdx2]?.timestampSec ?? f.timestampSec + 5;
-        } else {
-          // No end frame provided — default to start + 5s
-          endSec = f.timestampSec + 5;
-        }
-        // Cap duration to MAX_CLIP_DURATION_SEC
-        if (endSec - f.timestampSec > MAX_CLIP_DURATION_SEC) {
-          endSec = f.timestampSec + MAX_CLIP_DURATION_SEC;
-        }
-        // Ensure end >= start
-        if (endSec <= f.timestampSec) {
-          endSec = f.timestampSec + 3;
-        }
+        // Start the clip 2 seconds BEFORE the frame timestamp so the viewer
+        // sees the build-up, then the moment itself, then 4 seconds after.
+        const startSec = Math.max(0, f.timestampSec - 2);
+        const endSec = startSec + CLIP_DURATION_SEC;
 
         return {
           url: f.url,
-          timestampSec: f.timestampSec,
-          timestamp: formatTimestamp(f.timestampSec),
+          // Use the adjusted startSec so the video seeks to the right place
+          timestampSec: startSec,
+          timestamp: formatTimestamp(startSec),
           endTimestampSec: endSec,
           endTimestamp: formatTimestamp(endSec),
         };

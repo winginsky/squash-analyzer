@@ -167,3 +167,8 @@
 - [x] Update ThumbnailClip: loop playback between start and end timestamps when tapped
 - [x] Update seekMainVideo: support loop mode (repeat between startSec and endSec)
 - [x] Add loop indicator badge on thumbnail clips
+
+## Clip Accuracy Fix (v2)
+- [x] Stop relying on AI frame_end_indices for clip boundaries (AI cannot pick accurate ends from 12 sparse frames)
+- [x] Compute endSec = startSec + 6s fixed duration for every snapshot
+- [x] Offset startSec = frameTimestamp - 2s so viewer sees 2s build-up before the moment
