@@ -53,11 +53,13 @@ For each of the 4 areas:
 3. Focus only on "warning" or "error" severity issues — things that need improvement
 4. Provide a concrete, actionable description of what to fix and why it matters
 
-For each suggestion, you MUST reference the specific frame numbers that best illustrate the behavior:
+For each suggestion, you MUST reference specific frame numbers that best illustrate the behavior:
 - "frame_index": the 1-based frame number where the behavior STARTS or is first visible
-- "end_frame_index": the 1-based frame number where the behavior ENDS or is last visible (can be the same as frame_index if it is a single moment, or a later frame if it spans multiple frames)
+- "end_frame_index": the 1-based frame number where the behavior ENDS or is last visible
+- "frame_indices": up to 3 frame numbers (1-based) showing the issue at DIFFERENT moments in the video — spread them across the video so the player sees the pattern recurring, not the same moment three times
+- For each entry in frame_indices, also provide a matching "frame_end_indices" array with the corresponding end frame for that clip. Each clip should be 3-8 seconds long. If you are unsure, set end frame = start frame + 1.
 
-Choose frames that together form a meaningful clip showing the issue.
+Choose frames that together form meaningful short clips (3-8 seconds each) showing the issue.
 
 Return EXACTLY 4 suggestions (or fewer if fewer than 4 distinct issues exist), sorted by occurrence_count descending.
 
@@ -97,9 +99,10 @@ Return your analysis as a JSON object with this EXACT structure:
       "occurrence_count": <integer>,
       "impactEstimate": "<one sentence: why fixing this matters, e.g. 'Addressing this could reduce unforced errors by ~30% and win 3-4 extra points per game'>",
       "drill": "<one specific named drill the player can do in their next training session to fix this issue, e.g. 'Straight drive consistency — 20 consecutive drives from the back-left corner targeting the back-wall nick'>",
-      "frame_indices": [<1-based frame number>, <optional 2nd frame>, <optional 3rd frame>],
+      "frame_indices": [<1-based start frame>, <optional 2nd start frame>, <optional 3rd start frame>],
+      "frame_end_indices": [<1-based end frame for clip 1>, <end frame for clip 2 if present>, <end frame for clip 3 if present>],
       "frame_index": <same as first element of frame_indices, for backwards compat>,
-      "end_frame_index": <1-based end frame>
+      "end_frame_index": <same as first element of frame_end_indices, for backwards compat>
     }
   ]
 }`,
@@ -119,9 +122,10 @@ Return your analysis as a JSON object with this EXACT structure:
    - opponentWeaknesses: 2-3 bullets identifying exploitable weaknesses or patterns in the opponent's game
    - strategicAdjustments: 2-3 concrete, actionable bullets for how the player should change or improve their strategy
 4. Identify the TOP 4 most frequent improvement areas, counted by how many times each problem appears across the frames. Return them ranked by occurrence_count (most frequent first). For each suggestion:
-   - frame_indices: provide up to 3 frame numbers (1-based) that best illustrate the issue at different moments
-   - frame_index: same as the first element of frame_indices (for backwards compatibility)
-   - end_frame_index: the last frame where the issue is visible
+   - frame_indices: up to 3 start frame numbers (1-based) showing the issue at DIFFERENT moments spread across the video
+   - frame_end_indices: matching end frame numbers for each clip in frame_indices — each clip should be 3-8 seconds long (set end = start + 1 if unsure)
+   - frame_index: same as first element of frame_indices (backwards compat)
+   - end_frame_index: same as first element of frame_end_indices (backwards compat)
    - impactEstimate: one sentence explaining why fixing this matters (e.g. estimated points saved)
    - drill: one specific named drill the player can do in their next training session
 5. Provide an overall performanceScore (0-100) and performanceGrade (A/B/C/D) for the analyzed player.
@@ -141,6 +145,8 @@ Return the full JSON with gameStats, strategyOverview, and suggestions.`,
     // Attach the actual frame URL and timestamp to each suggestion based on
     // the frame_index the AI returned (1-based). Fall back to frame 1 if missing.
     // Sort by occurrence_count descending (most frequent first) and take top 4
+    const MAX_CLIP_DURATION_SEC = 8;
+
     const rawSuggestions = (analysisData.suggestions || []) as Array<{
       category: string;
       title: string;
@@ -149,6 +155,7 @@ Return the full JSON with gameStats, strategyOverview, and suggestions.`,
       occurrence_count?: number;
       frame_index?: number;
       frame_indices?: number[];
+      frame_end_indices?: number[];
       end_frame_index?: number;
       impactEstimate?: string;
       drill?: string;
@@ -178,11 +185,42 @@ Return the full JSON with gameStats, strategyOverview, and suggestions.`,
       const startFrame = frames[startIdx];
       const endFrame = frames[endIdx];
 
-      // Build array of up to 3 frame snapshots
-      const frameSnapshots = frameIndicesRaw.slice(0, 3).map((fi) => {
+      // Build array of up to 3 frame snapshots, each with its own end timestamp
+      const frameEndIndicesRaw: number[] = Array.isArray(s.frame_end_indices) && s.frame_end_indices.length > 0
+        ? s.frame_end_indices
+        : [];
+
+      const frameSnapshots = frameIndicesRaw.slice(0, 3).map((fi, snapIdx) => {
         const idx = Math.max(0, Math.min(fi - 1, frames.length - 1));
         const f = frames[idx];
-        return f ? { url: f.url, timestampSec: f.timestampSec, timestamp: formatTimestamp(f.timestampSec) } : null;
+        if (!f) return null;
+
+        // Determine end timestamp for this specific clip
+        let endSec: number;
+        const rawEndFi = frameEndIndicesRaw[snapIdx];
+        if (rawEndFi != null) {
+          const endIdx2 = Math.max(0, Math.min(rawEndFi - 1, frames.length - 1));
+          endSec = frames[endIdx2]?.timestampSec ?? f.timestampSec + 5;
+        } else {
+          // No end frame provided — default to start + 5s
+          endSec = f.timestampSec + 5;
+        }
+        // Cap duration to MAX_CLIP_DURATION_SEC
+        if (endSec - f.timestampSec > MAX_CLIP_DURATION_SEC) {
+          endSec = f.timestampSec + MAX_CLIP_DURATION_SEC;
+        }
+        // Ensure end >= start
+        if (endSec <= f.timestampSec) {
+          endSec = f.timestampSec + 3;
+        }
+
+        return {
+          url: f.url,
+          timestampSec: f.timestampSec,
+          timestamp: formatTimestamp(f.timestampSec),
+          endTimestampSec: endSec,
+          endTimestamp: formatTimestamp(endSec),
+        };
       }).filter(Boolean);
 
       return {

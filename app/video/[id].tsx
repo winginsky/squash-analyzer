@@ -28,17 +28,23 @@ function ThumbnailClip({
   endFrameTimestamp?: string | null;
   timestampSec: number;
   endTimestampSec?: number | null;
-  onPress: (startSec: number, endSec?: number) => void;
+  onPress: (startSec: number, endSec?: number, loop?: boolean) => void;
   colors: ReturnType<typeof useColors>;
 }) {
   const [pressed, setPressed] = useState(false);
-  // Show a range badge if start and end differ
-  const hasRange = endFrameTimestamp && endFrameTimestamp !== frameTimestamp;
+  const [isLooping, setIsLooping] = useState(false);
+  // Always show a range — endTimestampSec should always be set now
+  const hasRange = !!(endFrameTimestamp && endFrameTimestamp !== frameTimestamp);
+  const durationSec = endTimestampSec != null ? Math.round(endTimestampSec - timestampSec) : null;
   const badgeLabel = hasRange ? `${frameTimestamp} → ${endFrameTimestamp}` : frameTimestamp;
-  const playLabel = hasRange ? `▶ Play ${frameTimestamp} → ${endFrameTimestamp}` : `▶ Play from ${frameTimestamp}`;
+  const durationLabel = durationSec != null ? `${durationSec}s` : null;
   return (
     <TouchableOpacity
-      onPress={() => onPress(timestampSec, endTimestampSec ?? undefined)}
+      onPress={() => {
+        const nowLooping = !isLooping;
+        setIsLooping(nowLooping);
+        onPress(timestampSec, endTimestampSec ?? undefined, nowLooping);
+      }}
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
       style={{
@@ -46,34 +52,46 @@ function ThumbnailClip({
         borderRadius: 10,
         overflow: "hidden",
         borderWidth: 2,
-        borderColor: pressed ? colors.primary : colors.border,
+        borderColor: isLooping ? colors.primary : pressed ? colors.primary : colors.border,
         opacity: pressed ? 0.85 : 1,
-        width: hasRange ? 180 : 140,
+        width: 180,
       }}
     >
       {/* Frame image */}
-      <View style={{ width: hasRange ? 180 : 140, height: 80, backgroundColor: colors.surface }}>
+      <View style={{ width: 180, height: 90, backgroundColor: colors.surface }}>
         {/* @ts-ignore */}
         <img
           src={frameUrl}
           alt={`Frame at ${frameTimestamp}`}
           style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
         />
-        {/* Play icon overlay */}
+        {/* Play/loop icon overlay */}
         <View style={{
           position: "absolute", inset: 0,
           alignItems: "center", justifyContent: "center",
-          backgroundColor: "rgba(0,0,0,0.18)",
+          backgroundColor: isLooping ? "rgba(10,126,164,0.25)" : "rgba(0,0,0,0.18)",
         }}>
           <View style={{
-            width: 28, height: 28, borderRadius: 14,
-            backgroundColor: "rgba(0,0,0,0.55)",
+            width: 32, height: 32, borderRadius: 16,
+            backgroundColor: isLooping ? colors.primary : "rgba(0,0,0,0.55)",
             alignItems: "center", justifyContent: "center",
           }}>
-            <Text style={{ color: "#fff", fontSize: 12, marginLeft: 2 }}>▶</Text>
+            <Text style={{ color: "#fff", fontSize: isLooping ? 14 : 12, marginLeft: isLooping ? 0 : 2 }}>
+              {isLooping ? "↺" : "▶"}
+            </Text>
           </View>
         </View>
-        {/* Timestamp range badge */}
+        {/* Duration badge top-left */}
+        {durationLabel && (
+          <View style={{
+            position: "absolute", top: 4, left: 4,
+            backgroundColor: "rgba(0,0,0,0.65)", borderRadius: 5,
+            paddingHorizontal: 5, paddingVertical: 2,
+          }}>
+            <Text style={{ color: "#fff", fontSize: 10, fontWeight: "700" }}>{durationLabel}</Text>
+          </View>
+        )}
+        {/* Timestamp range badge bottom-right */}
         <View style={{
           position: "absolute", bottom: 4, right: 4,
           backgroundColor: "rgba(0,0,0,0.65)", borderRadius: 5,
@@ -83,9 +101,9 @@ function ThumbnailClip({
         </View>
       </View>
       {/* Label */}
-      <View style={{ backgroundColor: colors.surface, paddingHorizontal: 8, paddingVertical: 5 }}>
-        <Text style={{ fontSize: 11, color: colors.foreground, fontWeight: "600", textAlign: "center" }}>
-          {playLabel}
+      <View style={{ backgroundColor: isLooping ? colors.primary + "18" : colors.surface, paddingHorizontal: 8, paddingVertical: 5 }}>
+        <Text style={{ fontSize: 11, color: isLooping ? colors.primary : colors.foreground, fontWeight: "600", textAlign: "center" }}>
+          {isLooping ? "↺ Looping — tap to stop" : `▶ ${frameTimestamp}${hasRange ? ` → ${endFrameTimestamp}` : ""}`}
         </Text>
       </View>
     </TouchableOpacity>
@@ -143,6 +161,8 @@ type FrameSnapshot = {
   url: string;
   timestampSec: number;
   timestamp: string;
+  endTimestampSec?: number | null;
+  endTimestamp?: string | null;
 };
 
 type Suggestion = {
@@ -469,41 +489,84 @@ export default function VideoDetailScreen() {
     p.loop = false;
   });
 
+  // Ref to track the current loop interval so we can cancel it
+  const loopIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const loopHandlerRef = useRef<((this: HTMLVideoElement) => void) | null>(null);
+
+  const stopLoop = useCallback(() => {
+    if (loopIntervalRef.current != null) {
+      clearInterval(loopIntervalRef.current);
+      loopIntervalRef.current = null;
+    }
+    if (Platform.OS === "web") {
+      const el = mainVideoRef.current;
+      if (el && loopHandlerRef.current) {
+        el.removeEventListener("timeupdate", loopHandlerRef.current as EventListener);
+        loopHandlerRef.current = null;
+      }
+    }
+  }, []);
+
   // Seek the main video player to a given timestamp and scroll to top.
-  // If endSec is provided, auto-pause the video at that point.
-  const seekMainVideo = useCallback((startSec: number, endSec?: number) => {
+  // If endSec is provided, auto-pause or loop the video between start and end.
+  const seekMainVideo = useCallback((startSec: number, endSec?: number, loop?: boolean) => {
+    // Always cancel any existing loop first
+    stopLoop();
+
     if (Platform.OS === "web") {
       const el = mainVideoRef.current;
       if (el) {
         el.currentTime = startSec;
         el.play().catch(() => {});
         if (endSec != null && endSec > startSec) {
-          // Remove any previous listener to avoid stacking
-          const handler = () => {
-            if (el.currentTime >= endSec) {
-              el.pause();
-              el.removeEventListener("timeupdate", handler);
-            }
-          };
-          el.addEventListener("timeupdate", handler);
+          if (loop) {
+            // Loop mode: seek back to start whenever we pass endSec
+            const handler = function(this: HTMLVideoElement) {
+              if (this.currentTime >= endSec) {
+                this.currentTime = startSec;
+              }
+            };
+            loopHandlerRef.current = handler;
+            el.addEventListener("timeupdate", handler as EventListener);
+          } else {
+            // One-shot mode: pause at endSec
+            const handler = function(this: HTMLVideoElement) {
+              if (this.currentTime >= endSec) {
+                this.pause();
+                this.removeEventListener("timeupdate", handler as EventListener);
+              }
+            };
+            el.addEventListener("timeupdate", handler as EventListener);
+          }
         }
       }
     } else {
       try {
         mainPlayer.currentTime = startSec;
         mainPlayer.play();
-        // On native, schedule a pause after the clip duration
         if (endSec != null && endSec > startSec) {
           const durationMs = (endSec - startSec) * 1000;
-          setTimeout(() => {
-            try { mainPlayer.pause(); } catch { /* ignore */ }
-          }, durationMs);
+          if (loop) {
+            // Loop mode: reschedule seek every clip duration
+            const doLoop = () => {
+              try {
+                mainPlayer.currentTime = startSec;
+                mainPlayer.play();
+              } catch { /* ignore */ }
+            };
+            loopIntervalRef.current = setInterval(doLoop, durationMs);
+          } else {
+            // One-shot: pause after clip
+            setTimeout(() => {
+              try { mainPlayer.pause(); } catch { /* ignore */ }
+            }, durationMs);
+          }
         }
       } catch { /* ignore */ }
     }
     // Scroll back to top so the user sees the main video start playing
     scrollViewRef.current?.scrollTo({ y: 0, animated: true });
-  }, [mainPlayer]);
+  }, [mainPlayer, stopLoop]);
 
   return (
     <ScreenContainer edges={["top", "left", "right", "bottom"]}>
@@ -1059,7 +1122,7 @@ export default function VideoDetailScreen() {
                       return (
                         <View style={{ marginTop: 14 }}>
                           <Text style={{ fontSize: 11, color: colors.muted, fontWeight: "600", marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 }}>
-                            {snapshots.length > 1 ? `${snapshots.length} examples — tap to jump` : "Example — tap to jump"}
+                            {snapshots.length > 1 ? `${snapshots.length} examples — tap to loop` : "Example — tap to loop"}
                           </Text>
                           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                             <View style={{ flexDirection: "row", gap: 10 }}>
@@ -1068,9 +1131,9 @@ export default function VideoDetailScreen() {
                                   key={si}
                                   frameUrl={snap.url}
                                   frameTimestamp={snap.timestamp}
-                                  endFrameTimestamp={suggestion.endFrameTimestamp}
+                                  endFrameTimestamp={snap.endTimestamp ?? suggestion.endFrameTimestamp}
                                   timestampSec={snap.timestampSec}
-                                  endTimestampSec={si === 0 ? suggestion.endFrameTimestampSec : undefined}
+                                  endTimestampSec={snap.endTimestampSec ?? (si === 0 ? suggestion.endFrameTimestampSec : undefined)}
                                   onPress={seekMainVideo}
                                   colors={colors}
                                 />

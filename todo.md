@@ -160,3 +160,10 @@
 - [x] 4.2 Update UI: show performance score/grade as hero header below video player
 - [x] 4.3 Update UI: add sticky section tab bar (Stats / Strategy / Improvements)
 - [x] 4.4 Update UI: add collapse/minimise toggle to video player (deferred — tab bar provides equivalent navigation)
+
+## Clip Accuracy & Loop Playback
+- [x] Update AI prompt: every frame snapshot must have both start_sec and end_sec, duration capped at 8s
+- [x] Update server parsing: enforce max 8s clip duration, fill missing end_sec = start_sec + 5
+- [x] Update ThumbnailClip: loop playback between start and end timestamps when tapped
+- [x] Update seekMainVideo: support loop mode (repeat between startSec and endSec)
+- [x] Add loop indicator badge on thumbnail clips
