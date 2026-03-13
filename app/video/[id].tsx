@@ -529,13 +529,21 @@ export default function VideoDetailScreen() {
             loopHandlerRef.current = handler;
             el.addEventListener("timeupdate", handler as EventListener);
           } else {
-            // One-shot mode: pause at endSec
+            // One-shot mode: pause at endSec.
+            // IMPORTANT: store in loopHandlerRef so stopLoop() can remove it on the next tap.
+            // Without this, orphaned handlers accumulate and the earliest one always fires first,
+            // causing all clips to appear to stop at the same (first) end timestamp.
             const handler = function(this: HTMLVideoElement) {
               if (this.currentTime >= endSec) {
                 this.pause();
+                // Also clean up the ref so stopLoop doesn't try to remove it twice
+                if (loopHandlerRef.current === handler) {
+                  loopHandlerRef.current = null;
+                }
                 this.removeEventListener("timeupdate", handler as EventListener);
               }
             };
+            loopHandlerRef.current = handler;
             el.addEventListener("timeupdate", handler as EventListener);
           }
         }

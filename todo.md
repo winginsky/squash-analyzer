@@ -172,3 +172,7 @@
 - [x] Stop relying on AI frame_end_indices for clip boundaries (AI cannot pick accurate ends from 12 sparse frames)
 - [x] Compute endSec = startSec + 6s fixed duration for every snapshot
 - [x] Offset startSec = frameTimestamp - 2s so viewer sees 2s build-up before the moment
+
+## Clip End Timestamp Bug (v3)
+- [x] Find why all clip end timestamps are identical on the frontend
+- [x] Fix the bug: one-shot timeupdate handler was not stored in loopHandlerRef, causing orphaned handlers to accumulate and always fire at the first clip's endSec

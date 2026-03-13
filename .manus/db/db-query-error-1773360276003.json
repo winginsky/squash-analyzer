@@ -1,0 +1,8 @@
+{
+  "query": "SELECT id, title, status, JSON_EXTRACT(analysisResults, '$.suggestions[0].frameSnapshots') as snap0 FROM video_analyses WHERE status = 'complete' ORDER BY created_at DESC LIMIT 2;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user QwrFpHdig3uztGQ.root --database ENhuhCf7SLWoUcgY9QEkFN --execute SELECT id, title, status, JSON_EXTRACT(analysisResults, '$.suggestions[0].frameSnapshots') as snap0 FROM video_analyses WHERE status = 'complete' ORDER BY created_at DESC LIMIT 2;",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1054 (42S22) at line 1: Unknown column 'created_at' in 'order clause'"
+  ]
+}

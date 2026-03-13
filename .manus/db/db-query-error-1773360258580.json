@@ -1,0 +1,8 @@
+{
+  "query": "SELECT id, title, status, JSON_EXTRACT(analysisResults, '$.suggestions[0].frameSnapshots') as snap0, JSON_EXTRACT(analysisResults, '$.suggestions[1].frameSnapshots') as snap1 FROM videoAnalyses WHERE status = 'complete' ORDER BY createdAt DESC LIMIT 3;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user QwrFpHdig3uztGQ.root --database ENhuhCf7SLWoUcgY9QEkFN --execute SELECT id, title, status, JSON_EXTRACT(analysisResults, '$.suggestions[0].frameSnapshots') as snap0, JSON_EXTRACT(analysisResults, '$.suggestions[1].frameSnapshots') as snap1 FROM videoAnalyses WHERE status = 'complete' ORDER BY createdAt DESC LIMIT 3;",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1146 (42S02) at line 1: Table 'enhuhcf7slwoucgy9qekfn.videoAnalyses' doesn't exist"
+  ]
+}

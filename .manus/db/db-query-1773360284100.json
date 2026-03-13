@@ -1,0 +1,22 @@
+{
+  "query": "SELECT id, title, status, JSON_EXTRACT(analysisResults, '$.suggestions[0].frameSnapshots') as snap0 FROM video_analyses WHERE status = 'complete' ORDER BY id DESC LIMIT 2;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user QwrFpHdig3uztGQ.root --database ENhuhCf7SLWoUcgY9QEkFN --execute SELECT id, title, status, JSON_EXTRACT(analysisResults, '$.suggestions[0].frameSnapshots') as snap0 FROM video_analyses WHERE status = 'complete' ORDER BY id DESC LIMIT 2;",
+  "rows": [
+    {
+      "id": "180001",
+      "title": "Jeffrey vs. Luca",
+      "status": "complete",
+      "snap0": "[{\"endTimestamp\": \"0:19\", \"endTimestampSec\": 19.913566666666668, \"timestamp\": \"0:13\", \"timestampSec\": 13.913566666666666, \"url\": \"https://d2xsxph8kpxj0f.cloudfront.net/310519663348199059/ENhuhCf7SLWoUcgY9QEkFN/frames/1773336009940-frame-0.jpg\"}, {\"endTimestamp\": \"2:27\", \"endTimestampSec\": 147.22209999999998, \"timestamp\": \"2:21\", \"timestampSec\": 141.22209999999998, \"url\": \"https://d2xsxph8kpxj0f.cloudfront.net/310519663348199059/ENhuhCf7SLWoUcgY9QEkFN/frames/1773336013168-frame-4.jpg\"}, {\"endTimestamp\": \"3:30\", \"endTimestampSec\": 210.87636666666666, \"timestamp\": \"3:24\", \"timestampSec\": 204.87636666666666, \"url\": \"https://d2xsxph8kpxj0f.cloudfront.net/310519663348199059/ENhuhCf7SLWoUcgY9QEkFN/frames/1773336014607-frame-6.jpg\"}]"
+    },
+    {
+      "id": "150002",
+      "title": "Test Large Upload",
+      "status": "complete",
+      "snap0": "NULL"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\ttitle\tstatus\tsnap0\n180001\tJeffrey vs. Luca\tcomplete\t[{\"endTimestamp\": \"0:19\", \"endTimestampSec\": 19.913566666666668, \"timestamp\": \"0:13\", \"timestampSec\": 13.913566666666666, \"url\": \"https://d2xsxph8kpxj0f.cloudfront.net/310519663348199059/ENhuhCf7SLWoUcgY9QEkFN/frames/1773336009940-frame-0.jpg\"}, {\"endTimestamp\": \"2:27\", \"endTimestampSec\": 147.22209999999998, \"timestamp\": \"2:21\", \"timestampSec\": 141.22209999999998, \"url\": \"https://d2xsxph8kpxj0f.cloudfront.net/310519663348199059/ENhuhCf7SLWoUcgY9QEkFN/frames/1773336013168-frame-4.jpg\"}, {\"endTimestamp\": \"3:30\", \"endTimestampSec\": 210.87636666666666, \"timestamp\": \"3:24\", \"timestampSec\": 204.87636666666666, \"url\": \"https://d2xsxph8kpxj0f.cloudfront.net/310519663348199059/ENhuhCf7SLWoUcgY9QEkFN/frames/1773336014607-frame-6.jpg\"}]\n150002\tTest Large Upload\tcomplete\tNULL\n",
+  "stderr": "",
+  "execution_time_ms": 361
+}
