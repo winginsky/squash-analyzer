@@ -1,8 +1,9 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
-import { Platform } from "react-native";
+import { Platform, Share } from "react-native";
 import { trpc } from "@/lib/trpc";
 import { ScrollView, Text, View, TouchableOpacity } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { VideoView, useVideoPlayer } from "expo-video";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 
@@ -421,11 +422,57 @@ export default function VideoDetailScreen() {
 
   const videoUrl = videoData?.videoUrl || "";
 
+  // ─── Suggestion feedback (thumbs up/down) ────────────────────────────────
+  // Stored as { [videoId_suggestionIdx]: "up" | "down" | null }
+  const FEEDBACK_KEY = `suggestion_feedback_v${videoId}`;
+  const [feedback, setFeedback] = useState<Record<string, "up" | "down" | null>>({});
+  useEffect(() => {
+    AsyncStorage.getItem(FEEDBACK_KEY).then((raw) => {
+      if (raw) {
+        try { setFeedback(JSON.parse(raw)); } catch { /* ignore */ }
+      }
+    });
+  }, [FEEDBACK_KEY]);
+  const handleFeedback = useCallback(async (suggestionIdx: number, vote: "up" | "down") => {
+    const key = String(suggestionIdx);
+    const current = feedback[key];
+    const next = current === vote ? null : vote; // toggle off if same
+    const updated = { ...feedback, [key]: next };
+    setFeedback(updated);
+    await AsyncStorage.setItem(FEEDBACK_KEY, JSON.stringify(updated));
+  }, [feedback, FEEDBACK_KEY]);
+
   const suggestions: Suggestion[] = useMemo(() => {
     if (!videoData?.analysisResults) return [];
     const results = videoData.analysisResults as { suggestions?: Suggestion[] };
     return results.suggestions || [];
   }, [videoData]);
+
+  // ─── Share card ───────────────────────────────────────────────────────────
+  const handleShare = useCallback(async () => {
+    const title = videoData?.title || "Squash Analysis";
+    const player = videoData?.playerName ? `Player: ${videoData.playerName}` : "";
+    const results = videoData?.analysisResults as { performanceScore?: number; performanceGrade?: string } | undefined;
+    const grade = results?.performanceGrade ?? "?";
+    const score = results?.performanceScore ?? "?";
+    const topDrill = suggestions[0]?.drill ? `\n🎯 Top drill: ${suggestions[0].drill}` : "";
+    const topArea = suggestions[0]?.title ? `\n📌 Top improvement: ${suggestions[0].title}` : "";
+    const message = `🏸 ${title}\n${player}\n\nPerformance: ${grade} (${score}/100)${topArea}${topDrill}\n\nAnalyzed with Squash Analyzer`;
+    if (Platform.OS === "web") {
+      if (typeof navigator !== "undefined" && (navigator as any).share) {
+        try { await (navigator as any).share({ title, text: message }); } catch { /* user cancelled */ }
+      } else {
+        try {
+          await navigator.clipboard.writeText(message);
+          alert("Summary copied to clipboard!");
+        } catch {
+          alert(message);
+        }
+      }
+    } else {
+      try { await Share.share({ message, title }); } catch { /* user cancelled */ }
+    }
+  }, [videoData, suggestions]);
 
   const gameStats: GameStats | null = useMemo(() => {
     if (!videoData?.analysisResults) return null;
@@ -588,20 +635,37 @@ export default function VideoDetailScreen() {
             <Text className="text-xl font-bold text-foreground flex-1 text-center">
               {videoData?.title || "Video Analysis"}
             </Text>
-            {/* Re-analyze button */}
-            <TouchableOpacity
-              onPress={handleReanalyze}
-              disabled={isReanalyzing || isAnalyzing}
-              style={{
-                width: 40, height: 40,
-                alignItems: "center", justifyContent: "center",
-                backgroundColor: (isReanalyzing || isAnalyzing) ? colors.border : colors.primary + "22",
-                borderRadius: 20,
-                opacity: (isReanalyzing || isAnalyzing) ? 0.5 : 1,
-              }}
-            >
-              <Text style={{ fontSize: 18 }}>{isReanalyzing || isAnalyzing ? "⏳" : "🔄"}</Text>
-            </TouchableOpacity>
+            {/* Action buttons row */}
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              {/* Share button */}
+              {videoData?.status === "complete" && (
+                <TouchableOpacity
+                  onPress={handleShare}
+                  style={{
+                    width: 40, height: 40,
+                    alignItems: "center", justifyContent: "center",
+                    backgroundColor: colors.primary + "22",
+                    borderRadius: 20,
+                  }}
+                >
+                  <MaterialIcons name="share" size={18} color={colors.primary} />
+                </TouchableOpacity>
+              )}
+              {/* Re-analyze button */}
+              <TouchableOpacity
+                onPress={handleReanalyze}
+                disabled={isReanalyzing || isAnalyzing}
+                style={{
+                  width: 40, height: 40,
+                  alignItems: "center", justifyContent: "center",
+                  backgroundColor: (isReanalyzing || isAnalyzing) ? colors.border : colors.primary + "22",
+                  borderRadius: 20,
+                  opacity: (isReanalyzing || isAnalyzing) ? 0.5 : 1,
+                }}
+              >
+                <Text style={{ fontSize: 18 }}>{isReanalyzing || isAnalyzing ? "⏳" : "🔄"}</Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
           {/* Main Video Player */}
@@ -1162,6 +1226,35 @@ export default function VideoDetailScreen() {
                         <Text style={{ fontSize: 13, color: colors.foreground, lineHeight: 20 }}>{suggestion.drill}</Text>
                       </View>
                     ) : null}
+                    {/* Thumbs up/down feedback row */}
+                    <View style={{ marginTop: 14, flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 8 }}>
+                      <Text style={{ fontSize: 11, color: colors.muted, marginRight: 4 }}>Was this accurate?</Text>
+                      {(["up", "down"] as const).map((vote) => {
+                        const isSelected = feedback[String(idx)] === vote;
+                        const iconName = vote === "up" ? "thumb-up" : "thumb-down";
+                        const activeColor = vote === "up" ? colors.success : colors.error;
+                        return (
+                          <TouchableOpacity
+                            key={vote}
+                            onPress={() => handleFeedback(idx, vote)}
+                            style={{
+                              flexDirection: "row", alignItems: "center", gap: 4,
+                              paddingHorizontal: 10, paddingVertical: 6,
+                              borderRadius: 20,
+                              borderWidth: 1,
+                              borderColor: isSelected ? activeColor : colors.border,
+                              backgroundColor: isSelected ? activeColor + "18" : "transparent",
+                            }}
+                          >
+                            <MaterialIcons
+                              name={iconName}
+                              size={14}
+                              color={isSelected ? activeColor : colors.muted}
+                            />
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
                   </View>
                 );
               })}

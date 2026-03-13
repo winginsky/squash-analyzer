@@ -176,3 +176,22 @@
 ## Clip End Timestamp Bug (v3)
 - [x] Find why all clip end timestamps are identical on the frontend
 - [x] Fix the bug: one-shot timeupdate handler was not stored in loopHandlerRef, causing orphaned handlers to accumulate and always fire at the first clip's endSec
+
+## Feature: Progress Tracking (History Tab)
+- [x] Add History tab to tab bar with chart icon
+- [x] Fetch all completed videos and extract performanceScore + date
+- [x] Render line chart of score over time using SVG (react-native-svg)
+- [x] Show per-session summary cards below the chart (date, title, grade, score)
+- [x] Handle empty state (no analyses yet)
+
+## Feature: Suggestion Feedback (Thumbs Up/Down)
+- [x] Add thumbs up/down buttons to each suggestion card in video/[id].tsx
+- [x] Persist feedback per suggestion per video in AsyncStorage
+- [x] Show selected state (filled icon, colour) when feedback is given
+- [ ] Show aggregate feedback count badge on each thumb (deferred)
+
+## Feature: Share Card
+- [x] Add Share button to video detail page header
+- [x] Build a shareable summary card (grade ring, score, player name, top drill)
+- [x] Use Web Share API on web, React Native Share on native (no extra package needed)
+- [x] Clipboard fallback if Web Share API not available
