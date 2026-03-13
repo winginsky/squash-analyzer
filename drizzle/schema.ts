@@ -56,3 +56,21 @@ export const videoAnalyses = mysqlTable("video_analyses", {
 
 export type VideoAnalysis = typeof videoAnalyses.$inferSelect;
 export type InsertVideoAnalysis = typeof videoAnalyses.$inferInsert;
+
+/**
+ * Suggestion feedback table — stores thumbs up/down votes per suggestion per video
+ */
+export const suggestionFeedback = mysqlTable("suggestion_feedback", {
+  id: int("id").autoincrement().primaryKey(),
+  /** ID of the video analysis this feedback belongs to */
+  videoId: int("videoId").notNull(),
+  /** Index of the suggestion within the analysis results (0-based) */
+  suggestionIdx: int("suggestionIdx").notNull(),
+  /** Vote: 'up' = accurate, 'down' = inaccurate */
+  vote: mysqlEnum("vote", ["up", "down"]).notNull(),
+  /** Optional session identifier to deduplicate votes per device */
+  sessionKey: varchar("sessionKey", { length: 128 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type SuggestionFeedback = typeof suggestionFeedback.$inferSelect;
+export type InsertSuggestionFeedback = typeof suggestionFeedback.$inferInsert;

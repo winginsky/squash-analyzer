@@ -421,26 +421,52 @@ export default function VideoDetailScreen() {
   }, [isAnalyzing, refetch]);
 
   const videoUrl = videoData?.videoUrl || "";
-
-  // ─── Suggestion feedback (thumbs up/down) ────────────────────────────────
-  // Stored as { [videoId_suggestionIdx]: "up" | "down" | null }
+  // Local state for immediate UI response (optimistic update)
   const FEEDBACK_KEY = `suggestion_feedback_v${videoId}`;
   const [feedback, setFeedback] = useState<Record<string, "up" | "down" | null>>({});
+  // Stable session key stored in AsyncStorage (persists across app restarts)
+  const [sessionKey, setSessionKey] = useState<string>("");
   useEffect(() => {
-    AsyncStorage.getItem(FEEDBACK_KEY).then((raw) => {
-      if (raw) {
-        try { setFeedback(JSON.parse(raw)); } catch { /* ignore */ }
+    const SESSION_KEY_STORE = "squash_session_key";
+    AsyncStorage.multiGet([FEEDBACK_KEY, SESSION_KEY_STORE]).then(([[, raw], [, sk]]) => {
+      if (raw) { try { setFeedback(JSON.parse(raw)); } catch { /* ignore */ } }
+      if (sk) {
+        setSessionKey(sk);
+      } else {
+        // Generate a new session key
+        const newKey = `sk_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+        AsyncStorage.setItem(SESSION_KEY_STORE, newKey);
+        setSessionKey(newKey);
       }
     });
   }, [FEEDBACK_KEY]);
+  // Server-side aggregate counts
+  const numericVideoId = typeof videoId === "string" ? parseInt(videoId, 10) : videoId;
+  const { data: feedbackCounts, refetch: refetchCounts } = trpc.feedback.getCounts.useQuery(
+    { videoId: numericVideoId },
+    { enabled: !!numericVideoId && !isNaN(numericVideoId) }
+  );
+  const submitFeedback = trpc.feedback.submit.useMutation({
+    onSuccess: () => refetchCounts(),
+  });
   const handleFeedback = useCallback(async (suggestionIdx: number, vote: "up" | "down") => {
     const key = String(suggestionIdx);
     const current = feedback[key];
     const next = current === vote ? null : vote; // toggle off if same
+    // Optimistic local update
     const updated = { ...feedback, [key]: next };
     setFeedback(updated);
     await AsyncStorage.setItem(FEEDBACK_KEY, JSON.stringify(updated));
-  }, [feedback, FEEDBACK_KEY]);
+    // Persist to server
+    if (sessionKey) {
+      submitFeedback.mutate({
+        videoId: numericVideoId,
+        suggestionIdx,
+        vote: next,
+        sessionKey,
+      });
+    }
+  }, [feedback, FEEDBACK_KEY, sessionKey, numericVideoId, submitFeedback]);
 
   const suggestions: Suggestion[] = useMemo(() => {
     if (!videoData?.analysisResults) return [];
@@ -1227,34 +1253,45 @@ export default function VideoDetailScreen() {
                       </View>
                     ) : null}
                     {/* Thumbs up/down feedback row */}
-                    <View style={{ marginTop: 14, flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 8 }}>
-                      <Text style={{ fontSize: 11, color: colors.muted, marginRight: 4 }}>Was this accurate?</Text>
-                      {(["up", "down"] as const).map((vote) => {
-                        const isSelected = feedback[String(idx)] === vote;
-                        const iconName = vote === "up" ? "thumb-up" : "thumb-down";
-                        const activeColor = vote === "up" ? colors.success : colors.error;
-                        return (
-                          <TouchableOpacity
-                            key={vote}
-                            onPress={() => handleFeedback(idx, vote)}
-                            style={{
-                              flexDirection: "row", alignItems: "center", gap: 4,
-                              paddingHorizontal: 10, paddingVertical: 6,
-                              borderRadius: 20,
-                              borderWidth: 1,
-                              borderColor: isSelected ? activeColor : colors.border,
-                              backgroundColor: isSelected ? activeColor + "18" : "transparent",
-                            }}
-                          >
-                            <MaterialIcons
-                              name={iconName}
-                              size={14}
-                              color={isSelected ? activeColor : colors.muted}
-                            />
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </View>
+                    {(() => {
+                      const serverCounts = feedbackCounts?.find((c) => c.suggestionIdx === idx);
+                      return (
+                        <View style={{ marginTop: 14, flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 8 }}>
+                          <Text style={{ fontSize: 11, color: colors.muted, marginRight: 4 }}>Was this accurate?</Text>
+                          {(["up", "down"] as const).map((vote) => {
+                            const isSelected = feedback[String(idx)] === vote;
+                            const iconName = vote === "up" ? "thumb-up" : "thumb-down";
+                            const activeColor = vote === "up" ? colors.success : colors.error;
+                            const count = vote === "up" ? (serverCounts?.upCount ?? 0) : (serverCounts?.downCount ?? 0);
+                            return (
+                              <TouchableOpacity
+                                key={vote}
+                                onPress={() => handleFeedback(idx, vote)}
+                                style={{
+                                  flexDirection: "row", alignItems: "center", gap: 4,
+                                  paddingHorizontal: 10, paddingVertical: 6,
+                                  borderRadius: 20,
+                                  borderWidth: 1,
+                                  borderColor: isSelected ? activeColor : colors.border,
+                                  backgroundColor: isSelected ? activeColor + "18" : "transparent",
+                                }}
+                              >
+                                <MaterialIcons
+                                  name={iconName}
+                                  size={14}
+                                  color={isSelected ? activeColor : colors.muted}
+                                />
+                                {count > 0 && (
+                                  <Text style={{ fontSize: 11, color: isSelected ? activeColor : colors.muted, fontWeight: "600" }}>
+                                    {count}
+                                  </Text>
+                                )}
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      );
+                    })()}
                   </View>
                 );
               })}

@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { trpc } from "@/lib/trpc";
 import { getApiBaseUrl } from "@/constants/oauth";
 import {
@@ -12,6 +12,7 @@ import {
   FlatList,
   Pressable,
   RefreshControl,
+  Animated,
 } from "react-native";
 import { router } from "expo-router";
 
@@ -28,7 +29,24 @@ type VideoAnalysis = {
 
 export default function HomeScreen() {
   const colors = useColors();
-
+  // ── Analysis-complete banner ──────────────────────────────────
+  const [banner, setBanner] = useState<{ id: string; title: string } | null>(null);
+  const bannerAnim = useRef(new Animated.Value(0)).current;
+  const bannerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prevStatusRef = useRef<Record<string, string>>({});
+  const showBanner = useCallback((id: string, title: string) => {
+    setBanner({ id, title });
+    bannerAnim.setValue(0);
+    Animated.spring(bannerAnim, { toValue: 1, useNativeDriver: true, tension: 80, friction: 10 }).start();
+    if (bannerTimerRef.current) clearTimeout(bannerTimerRef.current);
+    bannerTimerRef.current = setTimeout(() => {
+      Animated.timing(bannerAnim, { toValue: 0, duration: 300, useNativeDriver: true }).start(() => setBanner(null));
+    }, 6000);
+  }, [bannerAnim]);
+  const dismissBanner = useCallback(() => {
+    if (bannerTimerRef.current) clearTimeout(bannerTimerRef.current);
+    Animated.timing(bannerAnim, { toValue: 0, duration: 200, useNativeDriver: true }).start(() => setBanner(null));
+  }, [bannerAnim]);
   // ── Upload state ──────────────────────────────────────────────
   const [videoUri, setVideoUri] = useState<string | null>(null);
   const [videoFileName, setVideoFileName] = useState("");
@@ -42,7 +60,23 @@ export default function HomeScreen() {
   // ── Video list state ──────────────────────────────────────────
   const { data: videosData, isLoading, refetch } = trpc.videos.list.useQuery();
   const [refreshing, setRefreshing] = useState(false);
-
+  // ── Poll while any video is analyzing; detect completion ──────────────────────
+  useEffect(() => {
+    if (!videosData) return;
+    const hasAnalyzing = videosData.some((v) => v.status === "analyzing" || v.status === "pending");
+    // Detect transitions from analyzing → complete
+    videosData.forEach((v) => {
+      const prev = prevStatusRef.current[String(v.id)];
+      const curr = v.status;
+      if ((prev === "analyzing" || prev === "pending") && curr === "complete") {
+        showBanner(String(v.id), v.title);
+      }
+      prevStatusRef.current[String(v.id)] = curr;
+    });
+    if (!hasAnalyzing) return;
+    const timer = setInterval(() => refetch(), 5000);
+    return () => clearInterval(timer);
+  }, [videosData, refetch, showBanner]);
   const videos: VideoAnalysis[] = (videosData || []).map((v) => ({
     id: v.id.toString(),
     title: v.title,
@@ -226,7 +260,54 @@ export default function HomeScreen() {
           onChange={handleWebFileChange as any}
         />
       )}
-
+      {/* ── Analysis-complete banner ── */}
+      {banner && (
+        <Animated.View
+          style={{
+            position: "absolute",
+            top: 12,
+            left: 16,
+            right: 16,
+            zIndex: 999,
+            transform: [{
+              translateY: bannerAnim.interpolate({ inputRange: [0, 1], outputRange: [-80, 0] }),
+            }],
+            opacity: bannerAnim,
+          }}
+        >
+          <View
+            style={{
+              backgroundColor: colors.success,
+              borderRadius: 14,
+              paddingHorizontal: 16,
+              paddingVertical: 12,
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 10,
+              shadowColor: "#000",
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.15,
+              shadowRadius: 8,
+              elevation: 8,
+            }}
+          >
+            <Text style={{ fontSize: 20 }}>✅</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 13, fontWeight: "700", color: "#fff" }}>Analysis Complete</Text>
+              <Text style={{ fontSize: 12, color: "rgba(255,255,255,0.85)" }} numberOfLines={1}>{banner.title}</Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => { dismissBanner(); router.push(`/video/${banner.id}` as any); }}
+              style={{ backgroundColor: "rgba(255,255,255,0.25)", borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 }}
+            >
+              <Text style={{ fontSize: 12, fontWeight: "700", color: "#fff" }}>View</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={dismissBanner} style={{ padding: 4 }}>
+              <Text style={{ fontSize: 16, color: "rgba(255,255,255,0.7)" }}>✕</Text>
+            </TouchableOpacity>
+          </View>
+        </Animated.View>
+      )}
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={{ flexGrow: 1 }}

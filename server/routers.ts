@@ -365,7 +365,7 @@ export const appRouter = router({
         return { success: true, status: "analyzing" };
       }),
 
-    /**
+     /**
      * Delete a video analysis
      */
     delete: publicProcedure
@@ -375,6 +375,43 @@ export const appRouter = router({
         return { success: true };
       }),
   }),
-});
 
+  // ─── Suggestion Feedback ──────────────────────────────────────────────────────
+  feedback: router({
+    /**
+     * Submit or update a thumbs up/down vote for a suggestion.
+     * Pass vote: null to remove the vote (toggle off).
+     */
+    submit: publicProcedure
+      .input(
+        z.object({
+          videoId: z.number(),
+          suggestionIdx: z.number(),
+          vote: z.enum(["up", "down"]).nullable(),
+          sessionKey: z.string().max(128),
+        })
+      )
+      .mutation(async ({ input }) => {
+        if (input.vote === null) {
+          await db.deleteSuggestionFeedback(input.videoId, input.suggestionIdx, input.sessionKey);
+        } else {
+          await db.upsertSuggestionFeedback({
+            videoId: input.videoId,
+            suggestionIdx: input.suggestionIdx,
+            vote: input.vote,
+            sessionKey: input.sessionKey,
+          });
+        }
+        return { success: true };
+      }),
+    /**
+     * Get aggregated vote counts for all suggestions in a video.
+     */
+    getCounts: publicProcedure
+      .input(z.object({ videoId: z.number() }))
+      .query(async ({ input }) => {
+        return db.getFeedbackCounts(input.videoId);
+      }),
+  }),
+});
 export type AppRouter = typeof appRouter;

@@ -1,6 +1,6 @@
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, videoAnalyses, InsertVideoAnalysis, VideoAnalysis } from "../drizzle/schema";
+import { InsertUser, users, videoAnalyses, InsertVideoAnalysis, VideoAnalysis, suggestionFeedback, InsertSuggestionFeedback } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -146,4 +146,99 @@ export async function deleteVideoAnalysis(id: number): Promise<void> {
   if (!db) throw new Error("Database not available");
 
   await db.delete(videoAnalyses).where(eq(videoAnalyses.id, id));
+}
+
+// ─── Suggestion Feedback ──────────────────────────────────────────────────────
+
+/**
+ * Upsert a feedback vote: if the same sessionKey + videoId + suggestionIdx already
+ * exists, update the vote; otherwise insert a new row.
+ */
+export async function upsertSuggestionFeedback(
+  data: InsertSuggestionFeedback
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  if (data.sessionKey) {
+    // Check for existing row
+    const existing = await db
+      .select({ id: suggestionFeedback.id })
+      .from(suggestionFeedback)
+      .where(
+        and(
+          eq(suggestionFeedback.videoId, data.videoId),
+          eq(suggestionFeedback.suggestionIdx, data.suggestionIdx),
+          eq(suggestionFeedback.sessionKey, data.sessionKey)
+        )
+      )
+      .limit(1);
+
+    if (existing.length > 0) {
+      await db
+        .update(suggestionFeedback)
+        .set({ vote: data.vote })
+        .where(eq(suggestionFeedback.id, existing[0].id));
+      return;
+    }
+  }
+
+  await db.insert(suggestionFeedback).values(data);
+}
+
+/**
+ * Remove a feedback vote (toggle off).
+ */
+export async function deleteSuggestionFeedback(
+  videoId: number,
+  suggestionIdx: number,
+  sessionKey: string
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+
+  await db
+    .delete(suggestionFeedback)
+    .where(
+      and(
+        eq(suggestionFeedback.videoId, videoId),
+        eq(suggestionFeedback.suggestionIdx, suggestionIdx),
+        eq(suggestionFeedback.sessionKey, sessionKey)
+      )
+    );
+}
+
+/**
+ * Get aggregated vote counts for all suggestions in a video.
+ * Returns an array of { suggestionIdx, upCount, downCount }.
+ */
+export async function getFeedbackCounts(
+  videoId: number
+): Promise<{ suggestionIdx: number; upCount: number; downCount: number }[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  const rows = await db
+    .select({
+      suggestionIdx: suggestionFeedback.suggestionIdx,
+      vote: suggestionFeedback.vote,
+      count: sql<number>`count(*)`,
+    })
+    .from(suggestionFeedback)
+    .where(eq(suggestionFeedback.videoId, videoId))
+    .groupBy(suggestionFeedback.suggestionIdx, suggestionFeedback.vote);
+
+  // Aggregate into { suggestionIdx -> { up, down } }
+  const map = new Map<number, { upCount: number; downCount: number }>();
+  for (const row of rows) {
+    const entry = map.get(row.suggestionIdx) ?? { upCount: 0, downCount: 0 };
+    if (row.vote === "up") entry.upCount = Number(row.count);
+    else entry.downCount = Number(row.count);
+    map.set(row.suggestionIdx, entry);
+  }
+
+  return Array.from(map.entries()).map(([suggestionIdx, counts]) => ({
+    suggestionIdx,
+    ...counts,
+  }));
 }

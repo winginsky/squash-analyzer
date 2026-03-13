@@ -195,3 +195,24 @@
 - [x] Build a shareable summary card (grade ring, score, player name, top drill)
 - [x] Use Web Share API on web, React Native Share on native (no extra package needed)
 - [x] Clipboard fallback if Web Share API not available
+
+## Feature: Server-side Feedback Aggregation
+- [x] Add suggestion_feedback table to drizzle schema (videoId, suggestionIdx, vote, createdAt)
+- [x] Run db:push migration
+- [x] Add feedback.submit tRPC mutation (publicProcedure)
+- [x] Add feedback.getByVideo tRPC query to fetch vote counts per suggestion
+- [x] Update frontend: call feedback.submit when thumbs up/down tapped
+- [x] Update frontend: show aggregate vote counts from server alongside local state
+
+## Feature: History Tab Player Filter
+- [x] Add player filter UI (chip row) to History tab
+- [x] Extract unique player names from sessions list
+- [x] Filter sessions and chart points by selected player
+- [x] Show "All Players" as default option
+
+## Feature: Analysis-Complete In-App Banner
+- [x] Add analysisComplete notification state to home screen
+- [x] Poll for status change from "analyzing" → "complete" on home screen (5s interval)
+- [x] Show animated slide-down green banner when analysis completes
+- [x] Banner has View button (navigates to results) and dismiss button
+- [x] Banner auto-dismisses after 6 seconds

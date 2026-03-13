@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { ScrollView, Text, View, TouchableOpacity, Dimensions } from "react-native";
 import { router } from "expo-router";
 import { trpc } from "@/lib/trpc";
@@ -40,10 +40,11 @@ interface SessionPoint {
 
 export default function HistoryScreen() {
   const colors = useColors();
+  const [selectedPlayer, setSelectedPlayer] = useState<string | null>(null);
   const { data: videos, isLoading } = trpc.videos.list.useQuery();
 
-  // Extract sessions with performance scores, sorted oldest → newest
-  const sessions: SessionPoint[] = useMemo(() => {
+  // Extract ALL sessions with performance scores, sorted oldest → newest
+  const allSessions: SessionPoint[] = useMemo(() => {
     if (!videos) return [];
     return videos
       .filter((v) => {
@@ -64,6 +65,19 @@ export default function HistoryScreen() {
       })
       .sort((a, b) => new Date(a.date as unknown as string).getTime() - new Date(b.date as unknown as string).getTime());
   }, [videos]);
+
+  // Unique player names for filter chips
+  const playerNames: string[] = useMemo(() => {
+    const names = new Set<string>();
+    allSessions.forEach((s) => { if (s.playerName) names.add(s.playerName); });
+    return Array.from(names).sort();
+  }, [allSessions]);
+
+  // Filtered sessions based on selected player
+  const sessions: SessionPoint[] = useMemo(() => {
+    if (!selectedPlayer) return allSessions;
+    return allSessions.filter((s) => s.playerName === selectedPlayer);
+  }, [allSessions, selectedPlayer]);
 
   const chartWidth = SCREEN_WIDTH - 32; // 16px padding each side
   const innerW = chartWidth - CHART_PAD_LEFT - CHART_PAD_RIGHT;
@@ -98,12 +112,64 @@ export default function HistoryScreen() {
           </Text>
         </View>
 
+        {/* Player filter chips — only show when there are multiple players */}
+        {!isLoading && playerNames.length > 1 && (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: 16, gap: 8, paddingBottom: 12 }}
+          >
+            {/* "All Players" chip */}
+            <TouchableOpacity
+              onPress={() => setSelectedPlayer(null)}
+              style={{
+                paddingHorizontal: 14,
+                paddingVertical: 7,
+                borderRadius: 20,
+                borderWidth: 1.5,
+                borderColor: selectedPlayer === null ? colors.primary : colors.border,
+                backgroundColor: selectedPlayer === null ? colors.primary + "18" : "transparent",
+              }}
+            >
+              <Text style={{
+                fontSize: 13,
+                fontWeight: "600",
+                color: selectedPlayer === null ? colors.primary : colors.muted,
+              }}>
+                All Players
+              </Text>
+            </TouchableOpacity>
+            {playerNames.map((name) => (
+              <TouchableOpacity
+                key={name}
+                onPress={() => setSelectedPlayer(selectedPlayer === name ? null : name)}
+                style={{
+                  paddingHorizontal: 14,
+                  paddingVertical: 7,
+                  borderRadius: 20,
+                  borderWidth: 1.5,
+                  borderColor: selectedPlayer === name ? colors.primary : colors.border,
+                  backgroundColor: selectedPlayer === name ? colors.primary + "18" : "transparent",
+                }}
+              >
+                <Text style={{
+                  fontSize: 13,
+                  fontWeight: "600",
+                  color: selectedPlayer === name ? colors.primary : colors.muted,
+                }}>
+                  {name}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        )}
+
         {isLoading ? (
           <View style={{ alignItems: "center", paddingTop: 60 }}>
             <Text style={{ color: colors.muted, fontSize: 15 }}>Loading sessions…</Text>
           </View>
-        ) : sessions.length === 0 ? (
-          /* Empty state */
+        ) : allSessions.length === 0 ? (
+          /* Empty state — no sessions at all */
           <View style={{ alignItems: "center", paddingTop: 60, paddingHorizontal: 32 }}>
             <Text style={{ fontSize: 48, marginBottom: 16 }}>📈</Text>
             <Text style={{ fontSize: 18, fontWeight: "700", color: colors.foreground, textAlign: "center", marginBottom: 8 }}>
@@ -117,6 +183,23 @@ export default function HistoryScreen() {
               style={{ marginTop: 24, backgroundColor: colors.primary, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 24 }}
             >
               <Text style={{ color: "#fff", fontWeight: "700", fontSize: 15 }}>Upload a Video</Text>
+            </TouchableOpacity>
+          </View>
+        ) : sessions.length === 0 ? (
+          /* Empty state — filter active but no matching sessions */
+          <View style={{ alignItems: "center", paddingTop: 60, paddingHorizontal: 32 }}>
+            <Text style={{ fontSize: 48, marginBottom: 16 }}>🔍</Text>
+            <Text style={{ fontSize: 18, fontWeight: "700", color: colors.foreground, textAlign: "center", marginBottom: 8 }}>
+              No sessions for {selectedPlayer}
+            </Text>
+            <Text style={{ fontSize: 14, color: colors.muted, textAlign: "center", lineHeight: 22 }}>
+              No completed analyses found for this player. Try selecting a different player or upload a new video.
+            </Text>
+            <TouchableOpacity
+              onPress={() => setSelectedPlayer(null)}
+              style={{ marginTop: 16, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20, borderWidth: 1, borderColor: colors.border }}
+            >
+              <Text style={{ color: colors.foreground, fontWeight: "600", fontSize: 14 }}>Show All Players</Text>
             </TouchableOpacity>
           </View>
         ) : (
@@ -233,7 +316,7 @@ export default function HistoryScreen() {
 
             {/* Session cards */}
             <Text style={{ fontSize: 16, fontWeight: "700", color: colors.foreground, paddingHorizontal: 20, marginBottom: 10 }}>
-              All Sessions
+              {selectedPlayer ? `${selectedPlayer}'s Sessions` : "All Sessions"}
             </Text>
             <View style={{ paddingHorizontal: 16, gap: 10 }}>
               {[...sessions].reverse().map((s) => (
