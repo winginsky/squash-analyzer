@@ -216,3 +216,17 @@
 - [x] Show animated slide-down green banner when analysis completes
 - [x] Banner has View button (navigates to results) and dismiss button
 - [x] Banner auto-dismisses after 6 seconds
+
+## Feature: Coach Notes (Human Analysis)
+- [x] Add coachNotes JSONB column to videoAnalyses table in drizzle schema
+- [x] Run db:push migration for coachNotes column
+- [x] Add videos.saveCoachNotes tRPC mutation (save structured coach notes)
+- [x] Add coachNotes to videos.get tRPC query response
+- [x] Build Coach Notes section UI on video detail page (collapsible, below AI analysis)
+- [x] Coach Notes form: Coach name + overall comment fields
+- [x] Coach Notes form: Strategy subsections (Strengths, Strategy Used, Opponent Weaknesses, Adjustments) as multi-line textareas (one bullet per line)
+- [x] Coach Notes form: Improvement areas with title, description, drill fields (dynamic add)
+- [x] Save button with saving/saved state, persists to DB
+- [x] Load existing coach notes from DB when video data arrives
+- [x] Feed coach notes into AI re-analysis prompt as additional context
+- [x] AI defers to coach notes as ground truth when re-analyzing

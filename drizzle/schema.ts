@@ -48,6 +48,8 @@ export const videoAnalyses = mysqlTable("video_analyses", {
   analysisResults: json("analysisResults"),
   /** Error message if analysis failed */
   errorMessage: text("errorMessage"),
+  /** Coach-entered structured analysis notes (same format as AI analysisResults) */
+  coachNotes: json("coachNotes"),
   /** Timestamp when the video was uploaded */
   createdAt: timestamp("createdAt").notNull().defaultNow(),
   /** Timestamp when the analysis was last updated */

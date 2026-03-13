@@ -548,6 +548,40 @@ export default function VideoDetailScreen() {
     return r.performanceGrade ?? null;
   }, [videoData]);
 
+  // ─── Coach Notes ────────────────────────────────────────────────────────────────────
+  type CoachNotes = {
+    coachName?: string;
+    coachComment?: string;
+    strategyOverview?: {
+      strengths?: string[];
+      strategyUsed?: string[];
+      opponentWeaknesses?: string[];
+      strategicAdjustments?: string[];
+    };
+    suggestions?: { title: string; description?: string; drill?: string }[];
+  };
+  const [coachNotesExpanded, setCoachNotesExpanded] = useState(false);
+  const [coachNotesDraft, setCoachNotesDraft] = useState<CoachNotes>({});
+  const [coachNotesSaved, setCoachNotesSaved] = useState(false);
+  const [coachNotesSaving, setCoachNotesSaving] = useState(false);
+  // Load existing coach notes from DB when video data arrives
+  useEffect(() => {
+    if (videoData?.coachNotes) {
+      setCoachNotesDraft(videoData.coachNotes as CoachNotes);
+    }
+  }, [videoData?.coachNotes]);
+  const saveCoachNotesMutation = trpc.videos.saveCoachNotes.useMutation();
+  const handleSaveCoachNotes = useCallback(async () => {
+    setCoachNotesSaving(true);
+    try {
+      await saveCoachNotesMutation.mutateAsync({ videoId, coachNotes: coachNotesDraft });
+      setCoachNotesSaved(true);
+      setTimeout(() => setCoachNotesSaved(false), 2500);
+    } finally {
+      setCoachNotesSaving(false);
+    }
+  }, [videoId, coachNotesDraft, saveCoachNotesMutation]);
+
   // Refs for section scroll-to
   const statsRef = useRef<View | null>(null);
   const strategyRef = useRef<View | null>(null);
@@ -1297,6 +1331,208 @@ export default function VideoDetailScreen() {
               })}
             </View>
           )}
+        {/* ─── Coach Notes Section ─────────────────────────────────────────── */}
+        <View style={{ marginHorizontal: 16, marginTop: 24, marginBottom: 8 }}>
+          {/* Header row */}
+          <TouchableOpacity
+            onPress={() => setCoachNotesExpanded(v => !v)}
+            style={{
+              flexDirection: "row", alignItems: "center",
+              backgroundColor: colors.surface,
+              borderRadius: 14, padding: 16,
+              borderWidth: 1, borderColor: colors.border,
+            }}
+          >
+            <View style={{
+              width: 36, height: 36, borderRadius: 18,
+              backgroundColor: "rgba(139,92,246,0.12)",
+              alignItems: "center", justifyContent: "center", marginRight: 12,
+            }}>
+              <MaterialIcons name="edit-note" size={20} color="#8B5CF6" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 16, fontWeight: "700", color: colors.foreground }}>Coach Notes</Text>
+              <Text style={{ fontSize: 12, color: colors.muted, marginTop: 1 }}>
+                {videoData?.coachNotes ? "Coach analysis saved" : "Add your own analysis"}
+              </Text>
+            </View>
+            <MaterialIcons
+              name={coachNotesExpanded ? "expand-less" : "expand-more"}
+              size={22} color={colors.muted}
+            />
+          </TouchableOpacity>
+
+          {coachNotesExpanded && (
+            <View style={{
+              backgroundColor: colors.surface,
+              borderRadius: 14, padding: 16,
+              borderWidth: 1, borderColor: colors.border,
+              borderTopWidth: 0, borderTopLeftRadius: 0, borderTopRightRadius: 0,
+              marginTop: -2,
+            }}>
+              {/* Coach name */}
+              <Text style={{ fontSize: 13, fontWeight: "600", color: colors.foreground, marginBottom: 4 }}>Coach Name</Text>
+              {/* @ts-ignore */}
+              <input
+                value={coachNotesDraft.coachName ?? ""}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                  setCoachNotesDraft(d => ({ ...d, coachName: e.target.value }))
+                }
+                placeholder="e.g. John Smith"
+                style={{
+                  width: "100%", padding: "8px 12px", borderRadius: 8,
+                  border: `1px solid ${colors.border}`,
+                  backgroundColor: colors.background, color: colors.foreground,
+                  fontSize: 14, marginBottom: 12, boxSizing: "border-box",
+                }}
+              />
+
+              {/* Overall comment */}
+              <Text style={{ fontSize: 13, fontWeight: "600", color: colors.foreground, marginBottom: 4 }}>Overall Comment</Text>
+              {/* @ts-ignore */}
+              <textarea
+                value={coachNotesDraft.coachComment ?? ""}
+                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
+                  setCoachNotesDraft(d => ({ ...d, coachComment: e.target.value }))
+                }
+                placeholder="General observations about the player's game..."
+                rows={3}
+                style={{
+                  width: "100%", padding: "8px 12px", borderRadius: 8,
+                  border: `1px solid ${colors.border}`,
+                  backgroundColor: colors.background, color: colors.foreground,
+                  fontSize: 14, marginBottom: 16, boxSizing: "border-box",
+                  resize: "vertical", fontFamily: "inherit",
+                }}
+              />
+
+              {/* Strategy subsections */}
+              {([
+                { key: "strengths" as const,            label: "Strengths",             color: "#22C55E", placeholder: "What is the player doing well? (one per line)" },
+                { key: "strategyUsed" as const,         label: "Strategy Used",          color: "#3B82F6", placeholder: "Tactical approach, court positioning... (one per line)" },
+                { key: "opponentWeaknesses" as const,   label: "Opponent Weaknesses",    color: "#F59E0B", placeholder: "Exploitable patterns in the opponent... (one per line)" },
+                { key: "strategicAdjustments" as const, label: "Strategic Adjustments",  color: "#8B5CF6", placeholder: "What should the player change? (one per line)" },
+              ] as const).map(({ key, label, color, placeholder }) => (
+                <View key={key} style={{ marginBottom: 14 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 4 }}>
+                    <View style={{ width: 3, height: 16, borderRadius: 2, backgroundColor: color, marginRight: 8 }} />
+                    <Text style={{ fontSize: 13, fontWeight: "600", color: colors.foreground }}>{label}</Text>
+                  </View>
+                  {/* @ts-ignore */}
+                  <textarea
+                    value={(coachNotesDraft.strategyOverview?.[key] ?? []).join("\n")}
+                    onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => {
+                      const lines = e.target.value.split("\n").filter((l: string) => l.trim());
+                      setCoachNotesDraft(d => ({
+                        ...d,
+                        strategyOverview: { ...d.strategyOverview, [key]: lines },
+                      }));
+                    }}
+                    placeholder={placeholder}
+                    rows={3}
+                    style={{
+                      width: "100%", padding: "8px 12px", borderRadius: 8,
+                      border: `1px solid ${color}40`,
+                      backgroundColor: `${color}08`, color: colors.foreground,
+                      fontSize: 13, boxSizing: "border-box",
+                      resize: "vertical", fontFamily: "inherit",
+                    }}
+                  />
+                </View>
+              ))}
+
+              {/* Improvement areas */}
+              <Text style={{ fontSize: 13, fontWeight: "700", color: colors.foreground, marginBottom: 8 }}>Improvement Areas</Text>
+              {(coachNotesDraft.suggestions ?? [{title:"",description:"",drill:""},{title:"",description:"",drill:""},{title:"",description:"",drill:""}]).map((s, i) => (
+                <View key={i} style={{
+                  borderWidth: 1, borderColor: colors.border,
+                  borderRadius: 10, padding: 12, marginBottom: 10,
+                  backgroundColor: colors.background,
+                }}>
+                  <Text style={{ fontSize: 12, fontWeight: "600", color: colors.muted, marginBottom: 4 }}>Area {i + 1}</Text>
+                  {/* @ts-ignore */}
+                  <input
+                    value={s.title}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                      const updated = [...(coachNotesDraft.suggestions ?? [{title:"",description:"",drill:""},{title:"",description:"",drill:""},{title:"",description:"",drill:""}])];
+                      updated[i] = { ...updated[i], title: e.target.value };
+                      setCoachNotesDraft(d => ({ ...d, suggestions: updated }));
+                    }}
+                    placeholder="Issue title"
+                    style={{
+                      width: "100%", padding: "6px 10px", borderRadius: 6,
+                      border: `1px solid ${colors.border}`,
+                      backgroundColor: colors.surface, color: colors.foreground,
+                      fontSize: 13, marginBottom: 6, boxSizing: "border-box",
+                    }}
+                  />
+                  {/* @ts-ignore */}
+                  <textarea
+                    value={s.description ?? ""}
+                    onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => {
+                      const updated = [...(coachNotesDraft.suggestions ?? [{title:"",description:"",drill:""},{title:"",description:"",drill:""},{title:"",description:"",drill:""}])];
+                      updated[i] = { ...updated[i], description: e.target.value };
+                      setCoachNotesDraft(d => ({ ...d, suggestions: updated }));
+                    }}
+                    placeholder="Description of the issue..."
+                    rows={2}
+                    style={{
+                      width: "100%", padding: "6px 10px", borderRadius: 6,
+                      border: `1px solid ${colors.border}`,
+                      backgroundColor: colors.surface, color: colors.foreground,
+                      fontSize: 13, marginBottom: 6, boxSizing: "border-box",
+                      resize: "vertical", fontFamily: "inherit",
+                    }}
+                  />
+                  {/* @ts-ignore */}
+                  <input
+                    value={s.drill ?? ""}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                      const updated = [...(coachNotesDraft.suggestions ?? [{title:"",description:"",drill:""},{title:"",description:"",drill:""},{title:"",description:"",drill:""}])];
+                      updated[i] = { ...updated[i], drill: e.target.value };
+                      setCoachNotesDraft(d => ({ ...d, suggestions: updated }));
+                    }}
+                    placeholder="Drill prescription (e.g. Straight drive consistency — 20 reps)"
+                    style={{
+                      width: "100%", padding: "6px 10px", borderRadius: 6,
+                      border: `1px solid #22C55E40`,
+                      backgroundColor: "rgba(34,197,94,0.06)", color: colors.foreground,
+                      fontSize: 13, boxSizing: "border-box",
+                    }}
+                  />
+                </View>
+              ))}
+              {/* Add area button */}
+              <TouchableOpacity
+                onPress={() => setCoachNotesDraft(d => ({
+                  ...d,
+                  suggestions: [...(d.suggestions ?? []), { title: "", description: "", drill: "" }],
+                }))}
+                style={{
+                  borderWidth: 1, borderColor: colors.border, borderStyle: "dashed",
+                  borderRadius: 8, padding: 10, alignItems: "center", marginBottom: 16,
+                }}
+              >
+                <Text style={{ color: colors.muted, fontSize: 13 }}>+ Add improvement area</Text>
+              </TouchableOpacity>
+
+              {/* Save button */}
+              <TouchableOpacity
+                onPress={handleSaveCoachNotes}
+                disabled={coachNotesSaving}
+                style={{
+                  backgroundColor: coachNotesSaved ? "#22C55E" : "#8B5CF6",
+                  borderRadius: 10, padding: 14, alignItems: "center",
+                  opacity: coachNotesSaving ? 0.6 : 1,
+                }}
+              >
+                <Text style={{ color: "#fff", fontWeight: "700", fontSize: 15 }}>
+                  {coachNotesSaving ? "Saving…" : coachNotesSaved ? "✓ Saved" : "Save Coach Notes"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
         </ScrollView>
       </View>
     </ScreenContainer>

@@ -242,3 +242,17 @@ export async function getFeedbackCounts(
     ...counts,
   }));
 }
+
+// ─── Coach Notes ──────────────────────────────────────────────────────────────
+
+/**
+ * Save (overwrite) coach notes for a video analysis.
+ */
+export async function saveCoachNotes(videoId: number, coachNotes: unknown): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db
+    .update(videoAnalyses)
+    .set({ coachNotes: coachNotes as any })
+    .where(eq(videoAnalyses.id, videoId));
+}

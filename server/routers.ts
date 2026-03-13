@@ -11,7 +11,22 @@ import { extractAndUploadFrames, formatTimestamp, type ExtractedFrame } from "./
 /**
  * Analyze a squash game video using AI vision
  */
-export async function analyzeSquashVideoPublic(videoUrl: string, playerName?: string, playerDescription?: string) {
+export async function analyzeSquashVideoPublic(
+  videoUrl: string,
+  playerName?: string,
+  playerDescription?: string,
+  coachNotes?: {
+    coachName?: string;
+    coachComment?: string;
+    strategyOverview?: {
+      strengths?: string[];
+      strategyUsed?: string[];
+      opponentWeaknesses?: string[];
+      strategicAdjustments?: string[];
+    };
+    suggestions?: { title: string; description?: string; drill?: string }[];
+  } | null
+) {
   try {
     // Extract evenly-spaced frames from the full video so the AI sees the
     // entire match rather than just the first few seconds.
@@ -46,6 +61,18 @@ export async function analyzeSquashVideoPublic(videoUrl: string, playerName?: st
 ${playerName ? `Focus your analysis specifically on the player: ${playerName}${playerDescription ? ` (${playerDescription})` : ''}. Ignore other players in the video.` : 'Analyze the primary player visible in the footage.'}
 
 Your task is to identify the TOP 4 most impactful improvement areas for this player, based on how frequently each problem appears across the video frames.
+
+${coachNotes ? `IMPORTANT: A human coach has reviewed this player and provided the following notes. You MUST take these into account and incorporate them into your analysis — they represent ground truth from an expert who has seen the player in person:
+
+Coach: ${coachNotes.coachName ?? 'Unknown'}
+${coachNotes.coachComment ? `Overall comment: ${coachNotes.coachComment}` : ''}
+${coachNotes.strategyOverview?.strengths?.length ? `Strengths (coach-observed): ${coachNotes.strategyOverview.strengths.join('; ')}` : ''}
+${coachNotes.strategyOverview?.strategyUsed?.length ? `Strategy used (coach-observed): ${coachNotes.strategyOverview.strategyUsed.join('; ')}` : ''}
+${coachNotes.strategyOverview?.opponentWeaknesses?.length ? `Opponent weaknesses (coach-observed): ${coachNotes.strategyOverview.opponentWeaknesses.join('; ')}` : ''}
+${coachNotes.strategyOverview?.strategicAdjustments?.length ? `Strategic adjustments (coach-recommended): ${coachNotes.strategyOverview.strategicAdjustments.join('; ')}` : ''}
+${coachNotes.suggestions?.length ? `Coach-identified improvement areas:\n${coachNotes.suggestions.map((s, i) => `  ${i+1}. ${s.title}${s.description ? ': ' + s.description : ''}${s.drill ? ' | Drill: ' + s.drill : ''}`).join('\n')}` : ''}
+
+Where your video observations align with the coach notes, reinforce them. Where they differ, note the discrepancy and defer to the coach's expertise.` : ''}
 
 For each of the 4 areas:
 1. Count how many times across all ${frames.length} frames you observe the problem occurring (occurrence_count)
@@ -347,8 +374,13 @@ export const appRouter = router({
           errorMessage: null,
         });
 
-        // Re-run analysis asynchronously
-        analyzeSquashVideoPublic(existing.videoUrl, existing.playerName ?? undefined, existing.playerDescription ?? undefined)
+        // Re-run analysis asynchronously — pass coach notes if available
+        analyzeSquashVideoPublic(
+          existing.videoUrl,
+          existing.playerName ?? undefined,
+          existing.playerDescription ?? undefined,
+          (existing.coachNotes as Parameters<typeof analyzeSquashVideoPublic>[3]) ?? null
+        )
           .then(async (results) => {
             await db.updateVideoAnalysis(input.id, {
               status: "complete",
@@ -372,6 +404,38 @@ export const appRouter = router({
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input }) => {
         await db.deleteVideoAnalysis(input.id);
+        return { success: true };
+      }),
+
+    /**
+     * Save coach notes for a video (structured analysis in same format as AI output).
+     * Coach notes are persisted separately from AI results and fed into re-analysis.
+     */
+    saveCoachNotes: publicProcedure
+      .input(
+        z.object({
+          videoId: z.number(),
+          coachNotes: z.object({
+            coachName: z.string().optional(),
+            coachComment: z.string().optional(),
+            strategyOverview: z.object({
+              strengths: z.array(z.string()).optional(),
+              strategyUsed: z.array(z.string()).optional(),
+              opponentWeaknesses: z.array(z.string()).optional(),
+              strategicAdjustments: z.array(z.string()).optional(),
+            }).optional(),
+            suggestions: z.array(
+              z.object({
+                title: z.string(),
+                description: z.string().optional(),
+                drill: z.string().optional(),
+              })
+            ).optional(),
+          }),
+        })
+      )
+      .mutation(async ({ input }) => {
+        await db.saveCoachNotes(input.videoId, input.coachNotes);
         return { success: true };
       }),
   }),
