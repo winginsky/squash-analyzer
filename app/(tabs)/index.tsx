@@ -52,6 +52,7 @@ export default function HomeScreen() {
   }, [bannerAnim]);
   // ── Upload state ──────────────────────────────────────────────
   const [videoUri, setVideoUri] = useState<string | null>(null);
+  const [videoFile, setVideoFile] = useState<File | null>(null);
   const [videoFileName, setVideoFileName] = useState("");
   const [title, setTitle] = useState("");
   const [playerName, setPlayerName] = useState("");
@@ -104,6 +105,8 @@ export default function HomeScreen() {
   const handleWebFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    // Store the File object directly — avoids fetch(objectURL) failures for .mov
+    setVideoFile(file);
     setVideoUri(URL.createObjectURL(file));
     setVideoFileName(file.name);
     if (!title) setTitle(`Squash Game ${new Date().toLocaleDateString()}`);
@@ -117,16 +120,31 @@ export default function HomeScreen() {
     setUploading(true);
     setUploadProgress("Preparing video…");
     try {
-      // Fetch the object URL as a blob (works on web with object URLs)
-      const response = await fetch(videoUri);
-      const blob = await response.blob();
+      // Use the stored File object directly if available (avoids fetch(objectURL)
+      // failures for .mov / video/quicktime files in some browsers).
+      // Fall back to fetching the object URL for any edge case where File is missing.
+      let fileToUpload: File | Blob;
+      if (videoFile) {
+        fileToUpload = videoFile;
+      } else {
+        const response = await fetch(videoUri);
+        fileToUpload = await response.blob();
+      }
 
       setUploadProgress("Uploading to server…");
 
+      // Normalise MIME type: video/quicktime → video/mp4 for server compatibility
+      const rawMime = fileToUpload.type || "video/mp4";
+      const normalisedMime = rawMime === "video/quicktime" ? "video/mp4" : rawMime;
+      const ext = normalisedMime.split("/")[1] || "mp4";
+
       // Build multipart FormData — no base64 encoding needed
       const formData = new FormData();
-      const ext = (blob.type || "video/mp4").split("/")[1] || "mp4";
-      formData.append("video", blob, `video.${ext}`);
+      // Re-wrap with normalised MIME so multer receives a consistent type
+      const uploadBlob = normalisedMime !== rawMime
+        ? new File([fileToUpload], `video.${ext}`, { type: normalisedMime })
+        : fileToUpload;
+      formData.append("video", uploadBlob, `video.${ext}`);
       formData.append("title", title);
       if (playerName) formData.append("playerName", playerName);
       if (playerDescription) formData.append("playerDescription", playerDescription);
@@ -152,6 +170,7 @@ export default function HomeScreen() {
 
       // Reset form
       setVideoUri(null);
+      setVideoFile(null);
       setVideoFileName("");
       setTitle("");
       setPlayerName("");

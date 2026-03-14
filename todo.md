@@ -291,3 +291,8 @@
 - [x] Add admin.updateUserRole tRPC mutation (admin only)
 - [x] Create Admin screen at /admin with user list and role assignment UI
 - [x] Add Admin panel link to Profile screen (visible to admins only)
+
+## Bug Fix: .mov Upload Failure
+- [x] Store File object directly when user selects a file (avoids fetch(objectURL) failure for .mov)
+- [x] Normalise video/quicktime MIME type to video/mp4 before sending to server
+- [x] Clear videoFile state on form reset after successful upload
