@@ -243,6 +243,49 @@ export async function getFeedbackCounts(
   }));
 }
 
+// ─── Share Tokens ────────────────────────────────────────────────────────────
+
+/**
+ * Generate and save a share token for a video, returning the token.
+ */
+export async function generateShareToken(videoId: number): Promise<string> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const token = Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2);
+  await db.update(videoAnalyses).set({ shareToken: token }).where(eq(videoAnalyses.id, videoId));
+  return token;
+}
+
+/**
+ * Get a video analysis by share token (public access).
+ */
+export async function getVideoAnalysisByShareToken(token: string): Promise<VideoAnalysis | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const results = await db.select().from(videoAnalyses).where(eq(videoAnalyses.shareToken, token));
+  return results[0] || null;
+}
+
+// ─── Admin / User Management ──────────────────────────────────────────────────
+
+/**
+ * List all users (admin only).
+ */
+export async function listAllUsers() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(users).orderBy(desc(users.createdAt));
+}
+
+/**
+ * Update a user's role.
+ */
+export async function updateUserRole(userId: number, role: "user" | "coach" | "admin"): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(users).set({ role }).where(eq(users.id, userId));
+}
+
 // ─── Coach Notes ──────────────────────────────────────────────────────────────
 
 /**

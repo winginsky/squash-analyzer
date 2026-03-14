@@ -18,6 +18,7 @@ import { router } from "expo-router";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { useColors } from "@/hooks/use-colors";
+import { useAuthContext } from "@/lib/auth-provider";
 
 type VideoAnalysis = {
   id: string;
@@ -29,6 +30,8 @@ type VideoAnalysis = {
 
 export default function HomeScreen() {
   const colors = useColors();
+  const { user, loading: authLoading, isAuthenticated, logout } = useAuthContext();
+
   // ── Analysis-complete banner ──────────────────────────────────
   const [banner, setBanner] = useState<{ id: string; title: string } | null>(null);
   const bannerAnim = useRef(new Animated.Value(0)).current;
@@ -58,7 +61,10 @@ export default function HomeScreen() {
   const webFileInputRef = useRef<HTMLInputElement | null>(null);
 
   // ── Video list state ──────────────────────────────────────────
-  const { data: videosData, isLoading, refetch } = trpc.videos.list.useQuery();
+  const { data: videosData, isLoading, refetch } = trpc.videos.list.useQuery(
+    undefined,
+    { enabled: isAuthenticated }
+  );
   const [refreshing, setRefreshing] = useState(false);
   // ── Poll while any video is analyzing; detect completion ──────────────────────
   useEffect(() => {
@@ -167,6 +173,11 @@ export default function HomeScreen() {
     setRefreshing(false);
   };
 
+  const handleLogout = async () => {
+    await logout();
+    router.replace("/login" as any);
+  };
+
   // ── Video card ────────────────────────────────────────────────
   const renderVideoCard = ({ item }: { item: VideoAnalysis }) => (
     <Pressable
@@ -245,6 +256,45 @@ export default function HomeScreen() {
       </View>
     </Pressable>
   );
+
+  // ── Auth loading state ────────────────────────────────────────
+  if (authLoading) {
+    return (
+      <ScreenContainer className="items-center justify-center">
+        <ActivityIndicator color={colors.primary} size="large" />
+        <Text style={{ marginTop: 12, fontSize: 14, color: colors.muted }}>Loading…</Text>
+      </ScreenContainer>
+    );
+  }
+
+  // ── Login gate ────────────────────────────────────────────────
+  if (!isAuthenticated) {
+    return (
+      <ScreenContainer className="items-center justify-center px-8">
+        <Text style={{ fontSize: 48, marginBottom: 16 }}>🎾</Text>
+        <Text style={{ fontSize: 24, fontWeight: "700", color: colors.foreground, marginBottom: 8, textAlign: "center" }}>
+          Squash Analyzer
+        </Text>
+        <Text style={{ fontSize: 15, color: colors.muted, textAlign: "center", marginBottom: 32 }}>
+          Sign in to upload videos and get AI coaching insights
+        </Text>
+        <TouchableOpacity
+          onPress={() => router.push("/login" as any)}
+          style={{
+            backgroundColor: colors.primary,
+            borderRadius: 14,
+            paddingVertical: 14,
+            paddingHorizontal: 32,
+            alignItems: "center",
+          }}
+        >
+          <Text style={{ fontSize: 16, fontWeight: "700", color: colors.background }}>
+            Sign In
+          </Text>
+        </TouchableOpacity>
+      </ScreenContainer>
+    );
+  }
 
   // ── Render ────────────────────────────────────────────────────
   return (
@@ -327,17 +377,58 @@ export default function HomeScreen() {
             padding: 24,
           }}
         >
-          {/* ── Page title ── */}
-          <Text
+          {/* ── Page header with user info ── */}
+          <View
             style={{
-              fontSize: 28,
-              fontWeight: "700",
-              color: colors.foreground,
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
               marginBottom: 4,
             }}
           >
-            Squash Analyzer
-          </Text>
+            <Text
+              style={{
+                fontSize: 28,
+                fontWeight: "700",
+                color: colors.foreground,
+              }}
+            >
+              Squash Analyzer
+            </Text>
+            {/* User avatar / logout button */}
+            <TouchableOpacity
+              onPress={() => router.push("/profile" as any)}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 8,
+                backgroundColor: colors.surface,
+                borderRadius: 20,
+                paddingHorizontal: 12,
+                paddingVertical: 6,
+                borderWidth: 1,
+                borderColor: colors.border,
+              }}
+            >
+              <View
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: 14,
+                  backgroundColor: colors.primary,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Text style={{ fontSize: 13, fontWeight: "700", color: colors.background }}>
+                  {(user?.name || user?.email || "U").charAt(0).toUpperCase()}
+                </Text>
+              </View>
+              <Text style={{ fontSize: 13, color: colors.foreground, fontWeight: "500", maxWidth: 100 }} numberOfLines={1}>
+                {user?.name || user?.email || "Profile"}
+              </Text>
+            </TouchableOpacity>
+          </View>
           <Text
             style={{ fontSize: 15, color: colors.muted, marginBottom: 24 }}
           >
@@ -658,6 +749,18 @@ export default function HomeScreen() {
               }
             />
           )}
+
+          {/* ── Sign out ── */}
+          <TouchableOpacity
+            onPress={handleLogout}
+            style={{
+              marginTop: 32,
+              alignItems: "center",
+              paddingVertical: 12,
+            }}
+          >
+            <Text style={{ fontSize: 14, color: colors.muted }}>Sign Out</Text>
+          </TouchableOpacity>
         </View>
       </ScrollView>
     </ScreenContainer>

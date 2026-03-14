@@ -230,3 +230,64 @@
 - [x] Load existing coach notes from DB when video data arrives
 - [x] Feed coach notes into AI re-analysis prompt as additional context
 - [x] AI defers to coach notes as ground truth when re-analyzing
+
+## Phase 1 — Authentication & Identity
+- [ ] Create login screen (app/login.tsx) with OAuth button and app branding
+- [ ] Add login screen to _layout.tsx Stack
+- [ ] Add AuthProvider context to _layout.tsx wrapping the app
+- [ ] Gate home screen: redirect unauthenticated users to login screen
+- [ ] Show user avatar/name in home screen header with logout option
+- [ ] Switch videos.list to protectedProcedure, filter by ctx.user.id
+- [ ] Switch videos.upload to protectedProcedure, set userId = ctx.user.id on insert
+- [ ] Add user profile screen (app/profile.tsx) accessible from home header
+
+## Phase 2 — Data Ownership & Access Control
+- [ ] Switch videos.get to protectedProcedure with ownership check
+- [ ] Switch videos.reanalyze to protectedProcedure with ownership check
+- [ ] Switch videos.delete to protectedProcedure with ownership check
+- [ ] Switch videos.saveCoachNotes to protectedProcedure with coach/admin role check
+- [ ] Add shareToken column to videoAnalyses schema (varchar, nullable, unique)
+- [ ] Add videos.createShareLink tRPC mutation (generates UUID share token)
+- [ ] Add videos.getByShareToken public procedure (read-only, no auth required)
+- [ ] Add share link screen (app/share/[token].tsx) for read-only video viewing
+
+## Phase 3 — Role System
+- [ ] Extend users.role enum to player | coach | admin in schema
+- [ ] Run db:push migration for role enum change
+- [ ] Add coachProcedure middleware (requires role: coach | admin)
+- [ ] Switch videos.saveCoachNotes to coachProcedure
+- [ ] Switch videos.reanalyze to allow owner OR coach/admin
+- [ ] Add role badge to user profile screen
+- [ ] Add admin user management screen (app/admin/users.tsx) for adminProcedure
+- [ ] Add admin procedure: users.list (admin only)
+- [ ] Add admin procedure: users.setRole (admin only)
+
+## Phase 1: Authentication & User-Scoped Data
+- [x] Add login gate to home screen (redirect to login if not authenticated)
+- [x] Scope videos.list tRPC query to authenticated user (protectedProcedure)
+- [x] Attach userId to video on upload (server-side auth in upload endpoint)
+- [x] Convert videos.get, reanalyze, delete to protectedProcedure with ownership check
+- [x] Add role field to User type in lib/_core/auth.ts
+- [x] Return role field from /api/auth/me endpoint
+- [x] Populate role in useAuth hook from API response
+- [x] Create Profile screen with user info, role badge, and sign-out button
+
+## Phase 2: Data Ownership & Shareable Links
+- [x] Add shareToken column to videoAnalyses table (drizzle schema + migration)
+- [x] Add db.generateShareToken() and db.getVideoAnalysisByShareToken() functions
+- [x] Add videos.generateShareToken tRPC mutation (owner or admin only)
+- [x] Add videos.getByShareToken tRPC query (publicProcedure)
+- [x] Add "Share Link" button (🔗 icon) to video detail header (owner/admin only)
+- [x] Create public shared video screen at /shared/[token]
+- [x] getShareBaseUrl() and copyOrShareLink() helpers in video detail screen
+
+## Phase 3: Role System & Admin
+- [x] Add coach role to users schema (user | coach | admin)
+- [x] Run db:push migration for role enum update
+- [x] Gate coach notes section to coaches and admins only (isCoachOrAdmin)
+- [x] Add role check to saveCoachNotes mutation (coach or admin only)
+- [x] Add db.listAllUsers() and db.updateUserRole() functions
+- [x] Add admin.listUsers tRPC query (admin only)
+- [x] Add admin.updateUserRole tRPC mutation (admin only)
+- [x] Create Admin screen at /admin with user list and role assignment UI
+- [x] Add Admin panel link to Profile screen (visible to admins only)

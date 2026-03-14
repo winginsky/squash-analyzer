@@ -16,7 +16,7 @@ export const users = mysqlTable("users", {
   name: text("name"),
   email: varchar("email", { length: 320 }),
   loginMethod: varchar("loginMethod", { length: 64 }),
-  role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
+  role: mysqlEnum("role", ["user", "coach", "admin"]).default("user").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
@@ -50,6 +50,8 @@ export const videoAnalyses = mysqlTable("video_analyses", {
   errorMessage: text("errorMessage"),
   /** Coach-entered structured analysis notes (same format as AI analysisResults) */
   coachNotes: json("coachNotes"),
+  /** Random token for generating shareable public links */
+  shareToken: varchar("shareToken", { length: 64 }),
   /** Timestamp when the video was uploaded */
   createdAt: timestamp("createdAt").notNull().defaultNow(),
   /** Timestamp when the analysis was last updated */

@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
-import { Platform, Share } from "react-native";
+import { Platform, Share, Alert } from "react-native";
 import { trpc } from "@/lib/trpc";
 import { ScrollView, Text, View, TouchableOpacity } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
@@ -9,6 +9,33 @@ import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { useColors } from "@/hooks/use-colors";
+import { useAuthContext } from "@/lib/auth-provider";
+import { getApiBaseUrl } from "@/constants/oauth";
+
+/** Returns the base URL for shareable public links (uses the Metro/web origin on web). */
+function getShareBaseUrl(): string {
+  if (typeof window !== "undefined" && window.location) {
+    return `${window.location.protocol}//${window.location.host}`;
+  }
+  // Fallback to API base URL for native
+  return getApiBaseUrl();
+}
+
+/** Copy a URL to clipboard or open the native share sheet. */
+async function copyOrShareLink(url: string, title: string) {
+  if (Platform.OS === "web") {
+    if (typeof navigator !== "undefined" && (navigator as any).share) {
+      try { await (navigator as any).share({ title, url }); } catch { /* cancelled */ }
+    } else if (navigator.clipboard) {
+      await navigator.clipboard.writeText(url);
+      Alert.alert("Link Copied", "Shareable link copied to clipboard!");
+    } else {
+      Alert.alert("Share Link", url);
+    }
+  } else {
+    try { await Share.share({ message: url, title }); } catch { /* cancelled */ }
+  }
+}
 
 // ─── Thumbnail clip button ────────────────────────────────────────────────────
 /**
@@ -395,6 +422,7 @@ export default function VideoDetailScreen() {
   const { id } = useLocalSearchParams();
   const videoId = parseInt(id as string, 10);
 
+  const { user } = useAuthContext();
   const { data: videoData, isLoading, refetch } = trpc.videos.get.useQuery({ id: videoId });
   const reanalyzeMutation = trpc.videos.reanalyze.useMutation({
     onSuccess: () => {
@@ -402,15 +430,35 @@ export default function VideoDetailScreen() {
       refetch();
     },
   });
+  const generateShareTokenMutation = trpc.videos.generateShareToken.useMutation({
+    onSuccess: ({ token }) => {
+      const shareUrl = `${getShareBaseUrl()}/shared/${token}`;
+      copyOrShareLink(shareUrl, videoData?.title ?? "Squash Analysis");
+      refetch();
+    },
+  });
 
   const isReanalyzing = reanalyzeMutation.isPending;
   const isAnalyzing = videoData?.status === "analyzing" || videoData?.status === "pending";
+  const isOwner = !!(user && videoData?.userId === user.id);
+  const isCoachOrAdmin = user?.role === "coach" || user?.role === "admin";
 
   const handleReanalyze = () => {
     if (!isReanalyzing && !isAnalyzing) {
       reanalyzeMutation.mutate({ id: videoId });
     }
   };
+
+  const handleShareLink = useCallback(() => {
+    // If we already have a share token, use it; otherwise generate one
+    const existingToken = (videoData as any)?.shareToken as string | null | undefined;
+    if (existingToken) {
+      const shareUrl = `${getShareBaseUrl()}/shared/${existingToken}`;
+      copyOrShareLink(shareUrl, videoData?.title ?? "Squash Analysis");
+    } else {
+      generateShareTokenMutation.mutate({ id: videoId });
+    }
+  }, [videoData, videoId, generateShareTokenMutation]);
 
   // Auto-refresh while analysis is in progress
   useEffect(() => {
@@ -697,7 +745,7 @@ export default function VideoDetailScreen() {
             </Text>
             {/* Action buttons row */}
             <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-              {/* Share button */}
+              {/* Share summary button */}
               {videoData?.status === "complete" && (
                 <TouchableOpacity
                   onPress={handleShare}
@@ -709,6 +757,22 @@ export default function VideoDetailScreen() {
                   }}
                 >
                   <MaterialIcons name="share" size={18} color={colors.primary} />
+                </TouchableOpacity>
+              )}
+              {/* Share link button — only for owner or admin */}
+              {videoData?.status === "complete" && (isOwner || user?.role === "admin") && (
+                <TouchableOpacity
+                  onPress={handleShareLink}
+                  disabled={generateShareTokenMutation.isPending}
+                  style={{
+                    width: 40, height: 40,
+                    alignItems: "center", justifyContent: "center",
+                    backgroundColor: colors.success + "22",
+                    borderRadius: 20,
+                    opacity: generateShareTokenMutation.isPending ? 0.5 : 1,
+                  }}
+                >
+                  <MaterialIcons name="link" size={18} color={colors.success} />
                 </TouchableOpacity>
               )}
               {/* Re-analyze button */}
@@ -1331,8 +1395,8 @@ export default function VideoDetailScreen() {
               })}
             </View>
           )}
-        {/* ─── Coach Notes Section ─────────────────────────────────────────── */}
-        <View style={{ marginHorizontal: 16, marginTop: 24, marginBottom: 8 }}>
+        {/* ─── Coach Notes Section (coaches + admins only) ──────────────── */}
+        {isCoachOrAdmin && <View style={{ marginHorizontal: 16, marginTop: 24, marginBottom: 8 }}>
           {/* Header row */}
           <TouchableOpacity
             onPress={() => setCoachNotesExpanded(v => !v)}
@@ -1532,7 +1596,7 @@ export default function VideoDetailScreen() {
               </TouchableOpacity>
             </View>
           )}
-        </View>
+        </View>}
         </ScrollView>
       </View>
     </ScreenContainer>

@@ -2,7 +2,7 @@ import { z } from "zod";
 import { COOKIE_NAME } from "../shared/const.js";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, router } from "./_core/trpc";
+import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import * as db from "./db";
 import { storagePut } from "./storage";
 import { invokeLLM } from "./_core/llm";
@@ -284,19 +284,23 @@ export const appRouter = router({
 
   videos: router({
     /**
-     * List all video analyses (public for now, no auth required)
+     * List video analyses for the authenticated user.
      */
-    list: publicProcedure.query(async () => {
-      return db.getUserVideoAnalyses();
+    list: protectedProcedure.query(async ({ ctx }) => {
+      return db.getUserVideoAnalyses(ctx.user.id);
     }),
 
     /**
-     * Get a single video analysis by ID
+     * Get a single video analysis by ID (accessible to owner or admin)
      */
-    get: publicProcedure
+    get: protectedProcedure
       .input(z.object({ id: z.number() }))
-      .query(async ({ input }) => {
-        return db.getVideoAnalysis(input.id);
+      .query(async ({ input, ctx }) => {
+        const video = await db.getVideoAnalysis(input.id);
+        if (!video) return null;
+        // Allow access if owner or admin
+        if (video.userId !== ctx.user.id && ctx.user.role !== "admin") return null;
+        return video;
       }),
 
     /**
@@ -358,13 +362,16 @@ export const appRouter = router({
     /**
      * Re-run AI analysis on an existing uploaded video
      */
-    reanalyze: publicProcedure
+    reanalyze: protectedProcedure
       .input(z.object({ id: z.number() }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         // Fetch the existing record to get the videoUrl and player info
         const existing = await db.getVideoAnalysis(input.id);
         if (!existing) {
           throw new Error("Video not found");
+        }
+        if (existing.userId !== ctx.user.id && ctx.user.role !== "admin") {
+          throw new Error("Not authorized");
         }
 
         // Reset status to analyzing and clear old results
@@ -400,9 +407,14 @@ export const appRouter = router({
      /**
      * Delete a video analysis
      */
-    delete: publicProcedure
+    delete: protectedProcedure
       .input(z.object({ id: z.number() }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
+        const video = await db.getVideoAnalysis(input.id);
+        if (!video) throw new Error("Video not found");
+        if (video.userId !== ctx.user.id && ctx.user.role !== "admin") {
+          throw new Error("Not authorized");
+        }
         await db.deleteVideoAnalysis(input.id);
         return { success: true };
       }),
@@ -411,7 +423,7 @@ export const appRouter = router({
      * Save coach notes for a video (structured analysis in same format as AI output).
      * Coach notes are persisted separately from AI results and fed into re-analysis.
      */
-    saveCoachNotes: publicProcedure
+    saveCoachNotes: protectedProcedure
       .input(
         z.object({
           videoId: z.number(),
@@ -434,8 +446,58 @@ export const appRouter = router({
           }),
         })
       )
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
+        // Only coaches and admins can save coach notes
+        if (ctx.user.role !== "coach" && ctx.user.role !== "admin") {
+          throw new Error("Only coaches and admins can save coach notes");
+        }
         await db.saveCoachNotes(input.videoId, input.coachNotes);
+        return { success: true };
+      }),
+
+    /**
+     * Generate a shareable link token for a video (owner or admin only).
+     */
+    generateShareToken: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        const video = await db.getVideoAnalysis(input.id);
+        if (!video) throw new Error("Video not found");
+        if (video.userId !== ctx.user.id && ctx.user.role !== "admin") {
+          throw new Error("Not authorized");
+        }
+        const token = await db.generateShareToken(input.id);
+        return { token };
+      }),
+
+    /**
+     * Get a video by its share token (public — no auth required).
+     */
+    getByShareToken: publicProcedure
+      .input(z.object({ token: z.string() }))
+      .query(async ({ input }) => {
+        return db.getVideoAnalysisByShareToken(input.token);
+      }),
+  }),
+
+  // ─── Admin ────────────────────────────────────────────────────────────────────
+  admin: router({
+    /**
+     * List all users (admin only).
+     */
+    listUsers: protectedProcedure.query(async ({ ctx }) => {
+      if (ctx.user.role !== "admin") throw new Error("Admin only");
+      return db.listAllUsers();
+    }),
+
+    /**
+     * Update a user's role (admin only).
+     */
+    updateUserRole: protectedProcedure
+      .input(z.object({ userId: z.number(), role: z.enum(["user", "coach", "admin"]) }))
+      .mutation(async ({ input, ctx }) => {
+        if (ctx.user.role !== "admin") throw new Error("Admin only");
+        await db.updateUserRole(input.userId, input.role);
         return { success: true };
       }),
   }),

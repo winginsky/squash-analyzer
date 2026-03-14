@@ -11,6 +11,7 @@ import { registerOAuthRoutes } from "./oauth";
 import { appRouter, analyzeSquashVideoPublic } from "../routers";
 import { createContext } from "./context";
 import { storagePut, storagePutFile } from "../storage";
+import { sdk } from "./sdk";
 import * as db from "../db";
 
 function isPortAvailable(port: number): Promise<boolean> {
@@ -116,6 +117,16 @@ async function startServer() {
           return;
         }
 
+        // Authenticate the uploader so the video is scoped to their account
+        let uploadUserId: number | undefined;
+        try {
+          const authUser = await sdk.authenticateRequest(req);
+          uploadUserId = authUser.id;
+        } catch {
+          // Allow anonymous uploads for backwards compat, but log the warning
+          console.warn("[upload-video] No authenticated user — video will be unowned");
+        }
+
         const mimeType = req.file.mimetype || "video/mp4";
         const ext = (mimeType.split("/")[1] || "mp4").replace("quicktime", "mov");
         const timestamp = Date.now();
@@ -131,6 +142,7 @@ async function startServer() {
           playerName: playerName || undefined,
           playerDescription: playerDescription || undefined,
           videoUrl,
+          userId: uploadUserId,
           status: "pending",
         });
 
