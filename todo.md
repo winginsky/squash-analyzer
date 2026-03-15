@@ -296,3 +296,7 @@
 - [x] Store File object directly when user selects a file (avoids fetch(objectURL) failure for .mov)
 - [x] Normalise video/quicktime MIME type to video/mp4 before sending to server
 - [x] Clear videoFile state on form reset after successful upload
+
+## Testing Mode
+- [x] Temporarily disable login gate for testing (home screen + server videos.list)
+- [ ] Re-enable login gate before production (search TODO comments in index.tsx and routers.ts)

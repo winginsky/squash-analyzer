@@ -64,7 +64,7 @@ export default function HomeScreen() {
   // ── Video list state ──────────────────────────────────────────
   const { data: videosData, isLoading, refetch } = trpc.videos.list.useQuery(
     undefined,
-    { enabled: isAuthenticated }
+    { enabled: true } // TODO: restore to `enabled: isAuthenticated` before production
   );
   const [refreshing, setRefreshing] = useState(false);
   // ── Poll while any video is analyzing; detect completion ──────────────────────
@@ -277,43 +277,10 @@ export default function HomeScreen() {
   );
 
   // ── Auth loading state ────────────────────────────────────────
-  if (authLoading) {
-    return (
-      <ScreenContainer className="items-center justify-center">
-        <ActivityIndicator color={colors.primary} size="large" />
-        <Text style={{ marginTop: 12, fontSize: 14, color: colors.muted }}>Loading…</Text>
-      </ScreenContainer>
-    );
-  }
-
-  // ── Login gate ────────────────────────────────────────────────
-  if (!isAuthenticated) {
-    return (
-      <ScreenContainer className="items-center justify-center px-8">
-        <Text style={{ fontSize: 48, marginBottom: 16 }}>🎾</Text>
-        <Text style={{ fontSize: 24, fontWeight: "700", color: colors.foreground, marginBottom: 8, textAlign: "center" }}>
-          Squash Analyzer
-        </Text>
-        <Text style={{ fontSize: 15, color: colors.muted, textAlign: "center", marginBottom: 32 }}>
-          Sign in to upload videos and get AI coaching insights
-        </Text>
-        <TouchableOpacity
-          onPress={() => router.push("/login" as any)}
-          style={{
-            backgroundColor: colors.primary,
-            borderRadius: 14,
-            paddingVertical: 14,
-            paddingHorizontal: 32,
-            alignItems: "center",
-          }}
-        >
-          <Text style={{ fontSize: 16, fontWeight: "700", color: colors.background }}>
-            Sign In
-          </Text>
-        </TouchableOpacity>
-      </ScreenContainer>
-    );
-  }
+  // ── Auth gate temporarily disabled for testing ──────────────
+  // TODO: Re-enable before production
+  // if (authLoading) { ... }
+  // if (!isAuthenticated) { ... }
 
   // ── Render ────────────────────────────────────────────────────
   return (
