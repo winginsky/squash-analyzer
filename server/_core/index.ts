@@ -186,14 +186,28 @@ async function startServer() {
   );
 
   const preferredPort = parseInt(process.env.PORT || "3000");
-  const port = await findAvailablePort(preferredPort);
 
-  if (port !== preferredPort) {
-    console.log(`Port ${preferredPort} is busy, using port ${port} instead`);
-  }
-
-  server.listen(port, () => {
-    console.log(`[api] server listening on port ${port}`);
+  // Always bind to the preferred port. If it is occupied (e.g. by a stale
+  // process from a previous run), wait briefly and retry rather than drifting
+  // to a different port — the frontend derives the API URL by replacing 8081
+  // with 3000 in the hostname, so any port drift breaks all API calls.
+  await new Promise<void>((resolve, reject) => {
+    const tryListen = (attemptsLeft: number) => {
+      server.listen(preferredPort, () => {
+        console.log(`[api] server listening on port ${preferredPort}`);
+        resolve();
+      });
+      server.once("error", (err: NodeJS.ErrnoException) => {
+        if (err.code === "EADDRINUSE" && attemptsLeft > 0) {
+          console.warn(`[api] Port ${preferredPort} busy, retrying in 2s… (${attemptsLeft} attempts left)`);
+          server.removeAllListeners("error");
+          setTimeout(() => tryListen(attemptsLeft - 1), 2000);
+        } else {
+          reject(err);
+        }
+      });
+    };
+    tryListen(10); // retry up to 10 times (20 seconds total)
   });
 }
 
