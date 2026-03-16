@@ -51,6 +51,10 @@ export default function HomeScreen() {
     Animated.timing(bannerAnim, { toValue: 0, duration: 200, useNativeDriver: true }).start(() => setBanner(null));
   }, [bannerAnim]);
   // ── Upload state ──────────────────────────────────────────────
+  // Input mode: file | url
+  const [inputMode, setInputMode] = useState<"file" | "url">("file");
+  const [videoUrl, setVideoUrl] = useState(""); // external URL input
+  const [urlError, setUrlError] = useState("");
   const [videoUri, setVideoUri] = useState<string | null>(null);
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [videoFileName, setVideoFileName] = useState("");
@@ -115,6 +119,53 @@ export default function HomeScreen() {
   };
 
   // ── Upload ────────────────────────────────────────────────────
+  // URL source detection helpers
+  const detectUrlSource = (url: string): "youtube" | "google_drive" | "google_photos" | null => {
+    try {
+      const u = new URL(url);
+      const host = u.hostname.replace(/^www\./, "");
+      if (host === "youtube.com" || host === "youtu.be" || host === "m.youtube.com") return "youtube";
+      if (host === "drive.google.com") return "google_drive";
+      if (host === "photos.google.com" || host === "lh3.googleusercontent.com") return "google_photos";
+    } catch { /* invalid URL */ }
+    return null;
+  };
+  const getUrlSourceLabel = (url: string) => {
+    const src = detectUrlSource(url);
+    if (src === "youtube") return { icon: "▶", label: "YouTube", color: "#FF0000" };
+    if (src === "google_drive") return { icon: "📁", label: "Google Drive", color: "#4285F4" };
+    if (src === "google_photos") return { icon: "🖼", label: "Google Photos", color: "#34A853" };
+    return null;
+  };
+  const handleUploadUrl = async () => {
+    const trimmedUrl = videoUrl.trim();
+    if (!trimmedUrl || !title) return;
+    const source = detectUrlSource(trimmedUrl);
+    if (!source) { setUrlError("Please enter a YouTube, Google Drive, or Google Photos link."); return; }
+    setUrlError("");
+    setUploading(true);
+    const srcLabel = source === "youtube" ? "YouTube" : source === "google_drive" ? "Google Drive" : "Google Photos";
+    setUploadProgress(`Downloading from ${srcLabel}… (this may take a minute)`);
+    try {
+      const apiBase = getApiBaseUrl();
+      const res = await fetch(`${apiBase}/api/upload-video-url`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ url: trimmedUrl, title, playerName: playerName || undefined, playerDescription: playerDescription || undefined }),
+      });
+      if (!res.ok) {
+        let errMsg = `Failed (HTTP ${res.status})`;
+        try { const j = await res.json(); errMsg = j.error || j.detail || errMsg; } catch { /* ignore */ }
+        throw new Error(errMsg);
+      }
+      setVideoUrl(""); setTitle(""); setPlayerName(""); setPlayerDescription(""); setUploadProgress("");
+      refetch();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed. Please try again.";
+      setUploadProgress(`❌ ${msg}`);
+    } finally { setUploading(false); }
+  };
   const handleUpload = async () => {
     if (!videoUri || !title) return;
     setUploading(true);
@@ -437,13 +488,85 @@ export default function HomeScreen() {
                 fontSize: 17,
                 fontWeight: "600",
                 color: colors.foreground,
-                marginBottom: 16,
+                marginBottom: 14,
               }}
             >
-              Upload New Video
+              Analyze New Video
             </Text>
 
-            {/* Video picker area */}
+            {/* Mode toggle: File Upload vs URL */}
+            <View style={{ flexDirection: "row", backgroundColor: colors.background, borderRadius: 10, borderWidth: 1, borderColor: colors.border, marginBottom: 16, overflow: "hidden" }}>
+              <TouchableOpacity
+                onPress={() => { setInputMode("file"); setUrlError(""); setUploadProgress(""); }}
+                style={{ flex: 1, paddingVertical: 9, alignItems: "center", backgroundColor: inputMode === "file" ? colors.primary : "transparent", borderRadius: 9 }}
+              >
+                <Text style={{ fontSize: 13, fontWeight: "600", color: inputMode === "file" ? colors.background : colors.muted }}>📹 Upload File</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => { setInputMode("url"); setUploadProgress(""); }}
+                style={{ flex: 1, paddingVertical: 9, alignItems: "center", backgroundColor: inputMode === "url" ? colors.primary : "transparent", borderRadius: 9 }}
+              >
+                <Text style={{ fontSize: 13, fontWeight: "600", color: inputMode === "url" ? colors.background : colors.muted }}>🔗 Paste Link</Text>
+              </TouchableOpacity>
+            </View>
+
+            {inputMode === "url" && (
+              <View style={{ marginBottom: 16 }}>
+                <Text style={{ fontSize: 13, fontWeight: "500", color: colors.foreground, marginBottom: 6 }}>Video Link</Text>
+                <View style={{ position: "relative" }}>
+                  <TextInput
+                    value={videoUrl}
+                    onChangeText={(t) => { setVideoUrl(t); setUrlError(""); }}
+                    placeholder="Paste YouTube, Google Drive, or Google Photos link…"
+                    placeholderTextColor={colors.muted}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    keyboardType="url"
+                    style={{ backgroundColor: colors.background, borderWidth: 1, borderColor: urlError ? colors.error : videoUrl && detectUrlSource(videoUrl) ? colors.success : colors.border, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, paddingRight: videoUrl ? 44 : 14, fontSize: 14, color: colors.foreground }}
+                  />
+                  {videoUrl ? (
+                    <TouchableOpacity onPress={() => { setVideoUrl(""); setUrlError(""); }} style={{ position: "absolute", right: 12, top: 0, bottom: 0, justifyContent: "center" }}>
+                      <Text style={{ fontSize: 16, color: colors.muted }}>✕</Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+                {videoUrl ? (() => {
+                  const src = getUrlSourceLabel(videoUrl);
+                  if (!src) return null;
+                  return (
+                    <View style={{ flexDirection: "row", alignItems: "center", marginTop: 6, gap: 6 }}>
+                      <View style={{ backgroundColor: src.color + "20", borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3, flexDirection: "row", alignItems: "center", gap: 4 }}>
+                        <Text style={{ fontSize: 12 }}>{src.icon}</Text>
+                        <Text style={{ fontSize: 12, fontWeight: "600", color: src.color }}>{src.label} detected</Text>
+                      </View>
+                      <Text style={{ fontSize: 11, color: colors.muted }}>Video will be downloaded server-side</Text>
+                    </View>
+                  );
+                })() : null}
+                {urlError ? <Text style={{ fontSize: 12, color: colors.error, marginTop: 6 }}>{urlError}</Text> : null}
+                {!videoUrl && (
+                  <View style={{ marginTop: 10, gap: 6 }}>
+                    {[
+                      { icon: "▶", label: "YouTube", hint: "Any public or unlisted video", color: "#FF0000" },
+                      { icon: "📁", label: "Google Drive", hint: 'Share link with "Anyone with the link"', color: "#4285F4" },
+                      { icon: "🖼", label: "Google Photos", hint: "Shared album or photo link", color: "#34A853" },
+                    ].map((s) => (
+                      <View key={s.label} style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                        <View style={{ width: 28, height: 28, borderRadius: 8, backgroundColor: s.color + "15", alignItems: "center", justifyContent: "center" }}>
+                          <Text style={{ fontSize: 14 }}>{s.icon}</Text>
+                        </View>
+                        <View>
+                          <Text style={{ fontSize: 13, fontWeight: "600", color: colors.foreground }}>{s.label}</Text>
+                          <Text style={{ fontSize: 11, color: colors.muted }}>{s.hint}</Text>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </View>
+            )}
+
+            {inputMode === "file" && (
             <TouchableOpacity
               onPress={pickVideoWeb}
               style={{
@@ -513,8 +636,8 @@ export default function HomeScreen() {
                   </Text>
                 </View>
               )}
-            </TouchableOpacity>
-
+             </TouchableOpacity>
+            )}
             {/* Two-column layout for fields on wider screens */}
             <View
               style={{
@@ -640,11 +763,11 @@ export default function HomeScreen() {
 
             {/* Analyze button */}
             <TouchableOpacity
-              onPress={handleUpload}
-              disabled={!videoUri || !title || uploading}
+              onPress={inputMode === "url" ? handleUploadUrl : handleUpload}
+              disabled={(inputMode === "file" ? !videoUri : !videoUrl.trim()) || !title || uploading}
               style={{
                 backgroundColor:
-                  !videoUri || !title || uploading
+                  (inputMode === "file" ? !videoUri : !videoUrl.trim()) || !title || uploading
                     ? colors.muted + "50"
                     : colors.primary,
                 borderRadius: 50,
@@ -660,7 +783,7 @@ export default function HomeScreen() {
                     fontWeight: "600",
                     fontSize: 16,
                     color:
-                      !videoUri || !title ? colors.muted : colors.background,
+                      (inputMode === "file" ? !videoUri : !videoUrl.trim()) || !title ? colors.muted : colors.background,
                   }}
                 >
                   🎾 Analyze Video
@@ -668,7 +791,7 @@ export default function HomeScreen() {
               )}
             </TouchableOpacity>
 
-            {!videoUri && !uploading && (
+            {inputMode === "file" && !videoUri && !uploading && (
               <Text
                 style={{
                   textAlign: "center",

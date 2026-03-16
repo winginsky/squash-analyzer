@@ -300,3 +300,20 @@
 ## Testing Mode
 - [x] Temporarily disable login gate for testing (home screen + server videos.list)
 - [ ] Re-enable login gate before production (search TODO comments in index.tsx and routers.ts)
+
+## Feature: Video URL Input (YouTube / Google Drive / Google Photos)
+- [ ] Server: URL-based video ingestion endpoint (POST /api/upload-video-url)
+- [ ] Server: Google Drive direct download URL resolution
+- [ ] Server: Google Photos URL handling
+- [ ] Server: YouTube download via yt-dlp
+- [ ] Server: URL validation and error handling for all three providers
+- [ ] UI: Toggle between file upload and URL input in upload form
+- [ ] UI: URL input field with link type detection and validation feedback
+
+## Feature: Video URL Input (YouTube / Google Drive / Google Photos)
+- [x] Server-side videoUrl.ts module with yt-dlp for YouTube and direct download for Google Drive/Photos
+- [x] POST /api/upload-video-url endpoint in server index
+- [x] Mode toggle (Upload File / Paste Link) in the upload form
+- [x] URL input with source detection badge (YouTube/Google Drive/Google Photos)
+- [x] Supported sources info panel when input is empty
+- [x] Analyze button wired to handleUploadUrl in URL mode

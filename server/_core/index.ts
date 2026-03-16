@@ -13,6 +13,7 @@ import { createContext } from "./context";
 import { storagePut, storagePutFile } from "../storage";
 import { sdk } from "./sdk";
 import * as db from "../db";
+import { downloadVideoFromUrl, validateVideoUrl, detectVideoSource } from "../videoUrl";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise((resolve) => {
@@ -172,6 +173,85 @@ async function startServer() {
         // Clean up temp file
         if (tmpFilePath) {
           try { fs.unlinkSync(tmpFilePath); } catch { /* ignore */ }
+        }
+      }
+    },
+  );
+
+  // ── URL-based video ingestion endpoint ─────────────────────────────────────
+  // Accepts a YouTube, Google Drive, or Google Photos URL, downloads the video
+  // server-side, uploads it to S3, and kicks off analysis — same pipeline as
+  // the file upload endpoint but without multipart form data.
+  app.post(
+    "/api/upload-video-url",
+    async (req: express.Request, res: express.Response) => {
+      let downloadedFilePath: string | null = null;
+      try {
+        const { url, title, playerName, playerDescription } = req.body as {
+          url?: string;
+          title?: string;
+          playerName?: string;
+          playerDescription?: string;
+        };
+        if (!url) {
+          res.status(400).json({ error: "url is required" });
+          return;
+        }
+        if (!title) {
+          res.status(400).json({ error: "title is required" });
+          return;
+        }
+        const validationError = validateVideoUrl(url);
+        if (validationError) {
+          res.status(400).json({ error: validationError });
+          return;
+        }
+        // Authenticate the uploader (optional — allow anonymous for testing)
+        let uploadUserId: number | undefined;
+        try {
+          const authUser = await sdk.authenticateRequest(req);
+          uploadUserId = authUser.id;
+        } catch {
+          console.warn("[upload-video-url] No authenticated user — video will be unowned");
+        }
+        const source = detectVideoSource(url);
+        console.log(`[upload-video-url] Downloading from ${source}: ${url}`);
+        // Download video to temp file (may take a while for large files)
+        const downloaded = await downloadVideoFromUrl(url);
+        downloadedFilePath = downloaded.filePath;
+        console.log(`[upload-video-url] Downloaded to ${downloaded.filePath}`);
+        // Upload to S3
+        const fileKey = `videos/${Date.now()}-${Math.random().toString(36).substring(7)}.mp4`;
+        const { url: videoUrl } = await storagePutFile(fileKey, downloaded.filePath, "video/mp4");
+        // Create database record
+        const videoId = await db.createVideoAnalysis({
+          title,
+          playerName: playerName || undefined,
+          playerDescription: playerDescription || undefined,
+          videoUrl,
+          userId: uploadUserId,
+          status: "pending",
+        });
+        // Respond immediately
+        res.json({ id: videoId, videoUrl, source });
+        // Run analysis asynchronously
+        analyzeSquashVideoPublic(videoUrl, playerName, playerDescription)
+          .then(async (results) => {
+            await db.updateVideoAnalysis(videoId, { status: "complete", analysisResults: results });
+          })
+          .catch(async (error: Error) => {
+            await db.updateVideoAnalysis(videoId, { status: "failed", errorMessage: error.message });
+          });
+      } catch (err) {
+        console.error("[upload-video-url] error:", err);
+        if (!res.headersSent) {
+          const msg = err instanceof Error ? err.message : String(err);
+          res.status(500).json({ error: "Failed to process video URL", detail: msg });
+        }
+      } finally {
+        if (downloadedFilePath) {
+          try { fs.unlinkSync(downloadedFilePath); } catch { /* ignore */ }
+          try { fs.rmdirSync(path.dirname(downloadedFilePath)); } catch { /* ignore */ }
         }
       }
     },
