@@ -317,3 +317,12 @@
 - [x] URL input with source detection badge (YouTube/Google Drive/Google Photos)
 - [x] Supported sources info panel when input is empty
 - [x] Analyze button wired to handleUploadUrl in URL mode
+
+## Feature: Player-Centric Organization
+- [x] Redesign home screen Past Analyses section with Player Roster cards (avatar, grade ring, sparkline, session count)
+- [x] Add "No Player" group for videos without a player name
+- [x] Create /player/[name] Player Detail screen with Overview / Stats / Sessions tabs
+- [x] Overview tab: avg score, best grade, total sessions, trend chart, most common weakness
+- [x] Stats tab: aggregated game stats across all sessions (shot breakdown, rally stats)
+- [x] Sessions tab: chronological video list for this player
+- [ ] Redesign History tab: multi-player trend chart + player ranking table + improvement delta (deferred)

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { getApiBaseUrl } from "@/constants/oauth";
 import {
@@ -19,13 +19,18 @@ import { router } from "expo-router";
 import { ScreenContainer } from "@/components/screen-container";
 import { useColors } from "@/hooks/use-colors";
 import { useAuthContext } from "@/lib/auth-provider";
+import Svg, { Polyline } from "react-native-svg";
 
 type VideoAnalysis = {
   id: string;
   title: string;
   playerName?: string;
   date: string;
+  dateRaw: Date;
   status: "analyzing" | "complete" | "failed";
+  score?: number;
+  grade?: string;
+  topSuggestion?: string;
 };
 
 export default function HomeScreen() {
@@ -88,19 +93,90 @@ export default function HomeScreen() {
     const timer = setInterval(() => refetch(), 5000);
     return () => clearInterval(timer);
   }, [videosData, refetch, showBanner]);
-  const videos: VideoAnalysis[] = (videosData || []).map((v) => ({
-    id: v.id.toString(),
-    title: v.title,
-    playerName: v.playerName || undefined,
-    date: new Date(v.createdAt).toLocaleDateString(),
-    status:
-      v.status === "complete"
-        ? "complete"
-        : v.status === "failed"
-        ? "failed"
-        : "analyzing",
-  }));
+  const videos: VideoAnalysis[] = (videosData || []).map((v) => {
+    const r = (v.analysisResults as { performanceScore?: number; performanceGrade?: string; suggestions?: { title: string }[] } | null) ?? null;
+    return {
+      id: v.id.toString(),
+      title: v.title,
+      playerName: v.playerName || undefined,
+      date: new Date(v.createdAt).toLocaleDateString(),
+      dateRaw: new Date(v.createdAt),
+      status:
+        v.status === "complete"
+          ? "complete"
+          : v.status === "failed"
+          ? "failed"
+          : "analyzing",
+      score: r?.performanceScore ?? undefined,
+      grade: r?.performanceGrade ?? undefined,
+      topSuggestion: r?.suggestions?.[0]?.title ?? undefined,
+    };
+  });
 
+  // ── Player grouping ──────────────────────────────────────────
+  type PlayerGroup = {
+    name: string | null; // null = "No Player"
+    videos: VideoAnalysis[];
+    latestScore?: number;
+    latestGrade?: string;
+    avgScore?: number;
+    sessionCount: number;
+    recentScores: number[]; // last 5 scores oldest→newest for sparkline
+    lastDate: string;
+  };
+  const playerGroups = useMemo((): PlayerGroup[] => {
+    if (!videos.length) return [];
+    const map = new Map<string, VideoAnalysis[]>();
+    videos.forEach((v) => {
+      const key = v.playerName || "__none__";
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(v);
+    });
+    const groups: PlayerGroup[] = [];
+    map.forEach((vids, key) => {
+      const sorted = [...vids].sort((a, b) => a.dateRaw.getTime() - b.dateRaw.getTime());
+      const completed = sorted.filter((v) => v.status === "complete" && typeof v.score === "number");
+      const scores = completed.map((v) => v.score!);
+      const latest = sorted[sorted.length - 1];
+      const latestCompleted = [...completed].reverse()[0];
+      groups.push({
+        name: key === "__none__" ? null : key,
+        videos: sorted.reverse(), // newest first for display
+        latestScore: latestCompleted?.score,
+        latestGrade: latestCompleted?.grade,
+        avgScore: scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : undefined,
+        sessionCount: vids.length,
+        recentScores: scores.slice(-5),
+        lastDate: latest.date,
+      });
+    });
+    // Sort: named players first (by session count desc), then "No Player" group
+    return groups.sort((a, b) => {
+      if (a.name === null) return 1;
+      if (b.name === null) return -1;
+      return b.sessionCount - a.sessionCount;
+    });
+  }, [videos]);
+  const gradeColor = (grade?: string) => {
+    switch (grade) {
+      case "A": return "#22C55E";
+      case "B": return colors.primary;
+      case "C": return "#F59E0B";
+      case "D": return "#EF4444";
+      default: return colors.muted;
+    }
+  };
+  const playerAvatarColor = (name: string | null) => {
+    if (!name) return colors.muted;
+    const palette = ["#0a7ea4", "#7C3AED", "#DB2777", "#D97706", "#059669", "#DC2626", "#2563EB"];
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+    return palette[Math.abs(hash) % palette.length];
+  };
+  const playerInitials = (name: string | null) => {
+    if (!name) return "?";
+    return name.split(" ").slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("");
+  };
   // ── File picking ──────────────────────────────────────────────
   const pickVideoWeb = () => {
     if (webFileInputRef.current) webFileInputRef.current.click();
@@ -805,68 +881,85 @@ export default function HomeScreen() {
             )}
           </View>
 
-          {/* ── Past analyses ── */}
-          <Text
-            style={{
-              fontSize: 20,
-              fontWeight: "700",
-              color: colors.foreground,
-              marginBottom: 12,
-            }}
-          >
-            Past Analyses
-          </Text>
-
+          {/* ── Players section ── */}
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+            <Text style={{ fontSize: 20, fontWeight: "700", color: colors.foreground }}>Players</Text>
+            {playerGroups.length > 0 && (
+              <Text style={{ fontSize: 13, color: colors.muted }}>{playerGroups.length} player{playerGroups.length !== 1 ? "s" : ""}</Text>
+            )}
+          </View>
           {isLoading ? (
             <ActivityIndicator color={colors.primary} style={{ marginTop: 24 }} />
-          ) : videos.length === 0 ? (
-            <View
-              style={{
-                alignItems: "center",
-                paddingVertical: 40,
-                backgroundColor: colors.surface,
-                borderRadius: 16,
-                borderWidth: 1,
-                borderColor: colors.border,
-              }}
-            >
+          ) : playerGroups.length === 0 ? (
+            <View style={{ alignItems: "center", paddingVertical: 40, backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: colors.border }}>
               <Text style={{ fontSize: 32, marginBottom: 8 }}>🎾</Text>
-              <Text
-                style={{
-                  fontSize: 16,
-                  fontWeight: "600",
-                  color: colors.foreground,
-                  marginBottom: 4,
-                }}
-              >
-                No analyses yet
-              </Text>
-              <Text style={{ fontSize: 14, color: colors.muted }}>
-                Upload your first video above to get started
-              </Text>
+              <Text style={{ fontSize: 16, fontWeight: "600", color: colors.foreground, marginBottom: 4 }}>No analyses yet</Text>
+              <Text style={{ fontSize: 14, color: colors.muted }}>Upload your first video above to get started</Text>
             </View>
           ) : (
-            <FlatList
-              data={videos}
-              renderItem={renderVideoCard}
-              keyExtractor={(item) => item.id}
-              scrollEnabled={false}
-              numColumns={Platform.OS === "web" ? 2 : 1}
-              key={Platform.OS === "web" ? "grid" : "list"}
-              columnWrapperStyle={
-                Platform.OS === "web" ? { gap: 16 } : undefined
-              }
-            />
+            <View style={{ gap: 12 }}>
+              {playerGroups.map((group) => {
+                const avatarColor = playerAvatarColor(group.name);
+                const initials = playerInitials(group.name);
+                const gc = gradeColor(group.latestGrade);
+                const pts = group.recentScores;
+                const sparkW = 56, sparkH = 28;
+                const minS = pts.length ? Math.min(...pts) : 0;
+                const maxS = pts.length ? Math.max(...pts) : 100;
+                const sparkPoints = pts.map((s, i) => {
+                  const x = pts.length < 2 ? sparkW / 2 : (i / (pts.length - 1)) * sparkW;
+                  const y = sparkH - ((s - minS) / Math.max(maxS - minS, 1)) * (sparkH - 4) - 2;
+                  return `${x},${y}`;
+                }).join(" ");
+                return (
+                  <TouchableOpacity
+                    key={group.name ?? "__none__"}
+                    onPress={() => router.push(`/player/${encodeURIComponent(group.name ?? "__none__")}` as any)}
+                    style={{ backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: colors.border, padding: 16, flexDirection: "row", alignItems: "center", gap: 14 }}
+                    activeOpacity={0.75}
+                  >
+                    {/* Avatar */}
+                    <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: avatarColor + "22", borderWidth: 2, borderColor: avatarColor, alignItems: "center", justifyContent: "center" }}>
+                      <Text style={{ fontSize: 16, fontWeight: "800", color: avatarColor }}>{initials}</Text>
+                    </View>
+                    {/* Info */}
+                    <View style={{ flex: 1, gap: 2 }}>
+                      <Text style={{ fontSize: 15, fontWeight: "700", color: colors.foreground }} numberOfLines={1}>
+                        {group.name ?? "Unassigned Videos"}
+                      </Text>
+                      <Text style={{ fontSize: 12, color: colors.muted }}>
+                        {group.sessionCount} session{group.sessionCount !== 1 ? "s" : ""} · Last: {group.lastDate}
+                      </Text>
+                      {group.avgScore !== undefined && (
+                        <Text style={{ fontSize: 12, color: colors.muted }}>Avg score: <Text style={{ fontWeight: "600", color: colors.foreground }}>{group.avgScore}</Text></Text>
+                      )}
+                    </View>
+                    {/* Sparkline */}
+                    {pts.length >= 2 && (
+                      <View style={{ alignItems: "center", gap: 2 }}>
+                        <Svg width={sparkW} height={sparkH}>
+                          <Polyline points={sparkPoints} fill="none" stroke={gc} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+                        </Svg>
+                        <Text style={{ fontSize: 9, color: colors.muted }}>trend</Text>
+                      </View>
+                    )}
+                    {/* Grade ring */}
+                    {group.latestGrade ? (
+                      <View style={{ width: 42, height: 42, borderRadius: 21, borderWidth: 3, borderColor: gc, alignItems: "center", justifyContent: "center", backgroundColor: gc + "18" }}>
+                        <Text style={{ fontSize: 16, fontWeight: "800", color: gc }}>{group.latestGrade}</Text>
+                      </View>
+                    ) : (
+                      <Text style={{ color: colors.muted, fontSize: 20 }}>›</Text>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
           )}
-
           {/* ── Sign out ── */}
           <TouchableOpacity
             onPress={handleLogout}
-            style={{
-              marginTop: 32,
-              alignItems: "center",
-              paddingVertical: 12,
-            }}
+            style={{ marginTop: 32, alignItems: "center", paddingVertical: 12 }}
           >
             <Text style={{ fontSize: 14, color: colors.muted }}>Sign Out</Text>
           </TouchableOpacity>
