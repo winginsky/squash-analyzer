@@ -339,3 +339,7 @@
 - [x] Fix silent return (no error, no success) when uploading a Google Drive link
 - [x] Ensure Google Drive download errors surface clearly to the user
 - [x] Add errorMessage display on failed video cards in the home screen
+
+## Bug Fix: Google Drive Download Still Failing (Public File)
+- [x] Fix Google Drive download failing even for publicly shared files
+- [x] Handle Google's large-file virus-scan confirmation page by extracting uuid from the warning HTML and following the real drive.usercontent.google.com URL

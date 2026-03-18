@@ -148,12 +148,13 @@ export function buildGooglePhotosDownloadUrl(shareUrl: string): string {
  * Follows redirects (including Google's confirm redirect for large files).
  */
 async function downloadDirect(url: string, destPath: string): Promise<void> {
-  // Use curl for robust redirect following and cookie handling
-  // (Google Drive requires a confirm cookie for large files)
+  const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36";
+
+  // Step 1: Fetch the URL — Google Drive may return a virus-scan warning HTML page
+  // for large files (>25 MB) instead of the video directly.
   const { stderr } = await execFileAsync("curl", [
-    "-L",                    // follow redirects
-    "--max-redirs", "10",
-    "-A", "Mozilla/5.0(Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+    "-L", "--max-redirs", "10",
+    "-A", UA,
     "--cookie", "download_warning=1",
     "-o", destPath,
     url,
@@ -163,26 +164,66 @@ async function downloadDirect(url: string, destPath: string): Promise<void> {
     throw new Error(`Download produced an empty or missing file. ${stderr}`);
   }
 
-  // Detect if Google returned an HTML page instead of a video file
-  // (happens when the file is not publicly accessible or requires sign-in)
+  // Step 2: Check if Google returned an HTML page
   const fd = fs.openSync(destPath, "r");
   const header = Buffer.alloc(512);
   fs.readSync(fd, header, 0, 512, 0);
   fs.closeSync(fd);
-  const headerStr = header.toString("utf8", 0, 512).toLowerCase();
-  if (headerStr.startsWith("<!doctype html") || headerStr.startsWith("<html")) {
-    fs.unlinkSync(destPath);
-    if (headerStr.includes("accounts.google.com") || headerStr.includes("sign in") || headerStr.includes("signin")) {
-      throw new Error(
-        "GOOGLE_DRIVE_PRIVATE: This Google Drive file is not publicly accessible. " +
-        "To fix: open the file in Google Drive → right-click → Share → change to \"Anyone with the link can view\", then try again."
-      );
+  const headerStr = header.toString("utf8", 0, 512);
+  const headerLower = headerStr.toLowerCase();
+
+  if (!headerLower.startsWith("<!doctype html") && !headerLower.startsWith("<html")) {
+    // Not HTML — we got the video directly, done.
+    return;
+  }
+
+  // Step 3: It's an HTML page. Read the full page to determine why.
+  const htmlContent = fs.readFileSync(destPath, "utf8");
+  fs.unlinkSync(destPath); // remove the HTML file
+
+  // Case A: Virus scan warning page — extract the real download URL from the form
+  // The form contains: action="https://drive.usercontent.google.com/download"
+  // with hidden inputs: id, export, confirm, uuid
+  const virusScanMatch = htmlContent.match(/Virus scan warning|can't scan this file/i);
+  const uuidMatch = htmlContent.match(/name=["']uuid["']\s+value=["']([^"']+)["']/);
+  const fileIdMatch = htmlContent.match(/name=["']id["']\s+value=["']([^"']+)["']/);
+
+  if (virusScanMatch && uuidMatch && fileIdMatch) {
+    // Build the confirmed download URL
+    const uuid = uuidMatch[1];
+    const fileId = fileIdMatch[1];
+    const realUrl = `https://drive.usercontent.google.com/download?id=${fileId}&export=download&confirm=t&uuid=${uuid}`;
+    console.log(`[downloadDirect] Google Drive virus-scan bypass: downloading from ${realUrl}`);
+
+    // Download the actual video
+    const { stderr: stderr2 } = await execFileAsync("curl", [
+      "-L", "--max-redirs", "5",
+      "-A", UA,
+      "-o", destPath,
+      realUrl,
+    ], { maxBuffer: 10 * 1024 * 1024 });
+
+    if (!fs.existsSync(destPath) || fs.statSync(destPath).size < 1024) {
+      throw new Error(`Google Drive virus-scan bypass download failed. ${stderr2}`);
     }
+    return;
+  }
+
+  // Case B: Sign-in / private file page
+  if (htmlContent.toLowerCase().includes("accounts.google.com") ||
+      htmlContent.toLowerCase().includes("sign in") ||
+      htmlContent.toLowerCase().includes("signin")) {
     throw new Error(
-      "GOOGLE_DRIVE_PRIVATE: Google Drive returned an error page instead of the video file. " +
-      "Make sure the file is shared as \"Anyone with the link can view\" and try again."
+      "GOOGLE_DRIVE_PRIVATE: This Google Drive file is not publicly accessible. " +
+      "To fix: open the file in Google Drive → right-click → Share → change to \"Anyone with the link can view\", then try again."
     );
   }
+
+  // Case C: Unknown HTML error page
+  throw new Error(
+    "GOOGLE_DRIVE_PRIVATE: Google Drive returned an unexpected page instead of the video. " +
+    "Make sure the file is shared as \"Anyone with the link can view\" and try again."
+  );
 }
 
 /**
