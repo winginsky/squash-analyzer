@@ -334,3 +334,8 @@
 ## Bug Fix: Google Photos URL Processing Error
 - [x] Diagnose and fix "Failed to process video URL" for photos.app.goo.gl links
 - [x] Improve server-side error messages to surface the real failure reason
+
+## Bug Fix: Google Drive Silent Failure
+- [x] Fix silent return (no error, no success) when uploading a Google Drive link
+- [x] Ensure Google Drive download errors surface clearly to the user
+- [x] Add errorMessage display on failed video cards in the home screen

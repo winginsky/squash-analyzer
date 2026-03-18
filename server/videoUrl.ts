@@ -153,14 +153,35 @@ async function downloadDirect(url: string, destPath: string): Promise<void> {
   const { stderr } = await execFileAsync("curl", [
     "-L",                    // follow redirects
     "--max-redirs", "10",
-    "-A", "Mozilla/5.0",     // user-agent to avoid bot blocks
-    "--cookie", "download_warning=1", // bypass Google Drive virus scan warning
+    "-A", "Mozilla/5.0(Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+    "--cookie", "download_warning=1",
     "-o", destPath,
     url,
   ], { maxBuffer: 10 * 1024 * 1024 });
 
   if (!fs.existsSync(destPath) || fs.statSync(destPath).size < 1024) {
     throw new Error(`Download produced an empty or missing file. ${stderr}`);
+  }
+
+  // Detect if Google returned an HTML page instead of a video file
+  // (happens when the file is not publicly accessible or requires sign-in)
+  const fd = fs.openSync(destPath, "r");
+  const header = Buffer.alloc(512);
+  fs.readSync(fd, header, 0, 512, 0);
+  fs.closeSync(fd);
+  const headerStr = header.toString("utf8", 0, 512).toLowerCase();
+  if (headerStr.startsWith("<!doctype html") || headerStr.startsWith("<html")) {
+    fs.unlinkSync(destPath);
+    if (headerStr.includes("accounts.google.com") || headerStr.includes("sign in") || headerStr.includes("signin")) {
+      throw new Error(
+        "GOOGLE_DRIVE_PRIVATE: This Google Drive file is not publicly accessible. " +
+        "To fix: open the file in Google Drive → right-click → Share → change to \"Anyone with the link can view\", then try again."
+      );
+    }
+    throw new Error(
+      "GOOGLE_DRIVE_PRIVATE: Google Drive returned an error page instead of the video file. " +
+      "Make sure the file is shared as \"Anyone with the link can view\" and try again."
+    );
   }
 }
 

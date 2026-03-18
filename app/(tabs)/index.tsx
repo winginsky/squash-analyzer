@@ -31,6 +31,7 @@ type VideoAnalysis = {
   score?: number;
   grade?: string;
   topSuggestion?: string;
+  errorMessage?: string;
 };
 
 export default function HomeScreen() {
@@ -110,6 +111,7 @@ export default function HomeScreen() {
       score: r?.performanceScore ?? undefined,
       grade: r?.performanceGrade ?? undefined,
       topSuggestion: r?.suggestions?.[0]?.title ?? undefined,
+      errorMessage: v.errorMessage || undefined,
     };
   });
 
@@ -244,7 +246,7 @@ export default function HomeScreen() {
       });
       if (!res.ok) {
         let errMsg = `Failed (HTTP ${res.status})`;
-        try { const j = await res.json(); errMsg = j.error || j.detail || errMsg; } catch { /* ignore */ }
+        try { const j = await res.json(); errMsg = j.detail || j.error || errMsg; } catch { /* ignore */ }
         throw new Error(errMsg);
       }
       setVideoUrl(""); setTitle(""); setPlayerName(""); setPlayerDescription(""); setUploadProgress("");
@@ -254,6 +256,10 @@ export default function HomeScreen() {
       // Translate the GOOGLE_PHOTOS_UNSUPPORTED sentinel into a friendly UI message
       if (msg.includes("GOOGLE_PHOTOS_UNSUPPORTED")) {
         msg = "Google Photos share links cannot be downloaded automatically.\n\nTo analyse this video:\n• Open it in Google Photos → tap ⋮ → Download, then upload the file\n• Or upload the video to Google Drive and paste a Drive link instead";
+      }
+      // Translate the GOOGLE_DRIVE_PRIVATE sentinel into a friendly UI message
+      if (msg.includes("GOOGLE_DRIVE_PRIVATE")) {
+        msg = "This Google Drive file is not publicly accessible.\n\nTo fix:\n1. Open the file in Google Drive\n2. Right-click → Share\n3. Change access to \"Anyone with the link can view\"\n4. Copy the share link and paste it here again";
       }
       setUploadProgress(`❌ ${msg}`);
     } finally { setUploading(false); }
@@ -415,6 +421,11 @@ export default function HomeScreen() {
           </Text>
         ) : null}
         <Text style={{ fontSize: 13, color: colors.muted }}>{item.date}</Text>
+        {item.status === "failed" && item.errorMessage ? (
+          <Text style={{ fontSize: 12, color: colors.error, marginTop: 4, lineHeight: 16 }} numberOfLines={3}>
+            {item.errorMessage.replace(/^GOOGLE_DRIVE_PRIVATE:\s*/i, "").replace(/^GOOGLE_PHOTOS_UNSUPPORTED:\s*/i, "")}
+          </Text>
+        ) : null}
       </View>
     </Pressable>
   );
