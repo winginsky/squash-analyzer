@@ -42,7 +42,7 @@ export function detectVideoSource(url: string): VideoSource {
     if (host === "drive.google.com") {
       return "google_drive";
     }
-    if (host === "photos.google.com" || host === "lh3.googleusercontent.com") {
+    if (host === "photos.google.com" || host === "lh3.googleusercontent.com" || host === "photos.app.goo.gl" || host === "goo.gl") {
       return "google_photos";
     }
   } catch {
@@ -210,10 +210,30 @@ export async function downloadVideoFromUrl(url: string): Promise<DownloadedVideo
       }
 
       case "google_photos": {
-        const downloadUrl = buildGooglePhotosDownloadUrl(url);
-        if (new URL(url).hostname === "photos.google.com") {
+        // Resolve short links (photos.app.goo.gl) to the full photos.google.com URL first
+        let resolvedUrl = url;
+        const urlHost = new URL(url).hostname;
+        if (urlHost === "photos.app.goo.gl" || urlHost === "goo.gl") {
+          try {
+            const headRes = await execFileAsync("curl", [
+              "-s", "-o", "/dev/null",
+              "-w", "%{url_effective}",
+              "-L", "--max-redirs", "10",
+              "-A", "Mozilla/5.0",
+              url,
+            ], { maxBuffer: 1024 * 1024, timeout: 15000 });
+            if (headRes.stdout && headRes.stdout.startsWith("http")) {
+              resolvedUrl = headRes.stdout.trim();
+            }
+          } catch {
+            // If redirect resolution fails, pass the short URL to yt-dlp directly
+          }
+        }
+        const downloadUrl = buildGooglePhotosDownloadUrl(resolvedUrl);
+        const resolvedHost = new URL(resolvedUrl).hostname;
+        if (resolvedHost === "photos.google.com" || resolvedHost === "photos.app.goo.gl" || resolvedHost === "goo.gl") {
           // photos.google.com share links — use yt-dlp which handles these
-          await downloadYouTube(downloadUrl, destPath);
+          await downloadYouTube(resolvedUrl, destPath);
         } else {
           await downloadDirect(downloadUrl, destPath);
         }

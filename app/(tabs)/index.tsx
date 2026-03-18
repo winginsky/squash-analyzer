@@ -202,7 +202,7 @@ export default function HomeScreen() {
       const host = u.hostname.replace(/^www\./, "");
       if (host === "youtube.com" || host === "youtu.be" || host === "m.youtube.com") return "youtube";
       if (host === "drive.google.com") return "google_drive";
-      if (host === "photos.google.com" || host === "lh3.googleusercontent.com") return "google_photos";
+      if (host === "photos.google.com" || host === "lh3.googleusercontent.com" || host === "photos.app.goo.gl" || host === "goo.gl") return "google_photos";
     } catch { /* invalid URL */ }
     return null;
   };

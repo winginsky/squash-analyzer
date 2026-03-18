@@ -326,3 +326,7 @@
 - [x] Stats tab: aggregated game stats across all sessions (shot breakdown, rally stats)
 - [x] Sessions tab: chronological video list for this player
 - [ ] Redesign History tab: multi-player trend chart + player ranking table + improvement delta (deferred)
+
+## Bug Fix: Google Photos Short-Link
+- [x] Accept photos.app.goo.gl short links in client-side URL validator
+- [x] Resolve goo.gl redirect on server before downloading
