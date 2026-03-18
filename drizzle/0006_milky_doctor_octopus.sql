@@ -1,0 +1,2 @@
+ALTER TABLE `video_analyses` MODIFY COLUMN `videoUrl` varchar(1024) NOT NULL DEFAULT '';--> statement-breakpoint
+ALTER TABLE `video_analyses` MODIFY COLUMN `status` enum('downloading','pending','analyzing','complete','failed') NOT NULL DEFAULT 'pending';

@@ -215,43 +215,52 @@ async function startServer() {
           console.warn("[upload-video-url] No authenticated user — video will be unowned");
         }
         const source = detectVideoSource(url);
-        console.log(`[upload-video-url] Downloading from ${source}: ${url}`);
-        // Download video to temp file (may take a while for large files)
-        const downloaded = await downloadVideoFromUrl(url);
-        downloadedFilePath = downloaded.filePath;
-        console.log(`[upload-video-url] Downloaded to ${downloaded.filePath}`);
-        // Upload to S3
-        const fileKey = `videos/${Date.now()}-${Math.random().toString(36).substring(7)}.mp4`;
-        const { url: videoUrl } = await storagePutFile(fileKey, downloaded.filePath, "video/mp4");
-        // Create database record
+        // Create DB record immediately with "downloading" status so the UI can
+        // show a pending card right away without waiting for the large download.
         const videoId = await db.createVideoAnalysis({
           title,
           playerName: playerName || undefined,
           playerDescription: playerDescription || undefined,
-          videoUrl,
+          videoUrl: "", // will be updated after download completes
           userId: uploadUserId,
-          status: "pending",
+          status: "downloading",
         });
-        // Respond immediately
-        res.json({ id: videoId, videoUrl, source });
-        // Run analysis asynchronously
-        analyzeSquashVideoPublic(videoUrl, playerName, playerDescription)
-          .then(async (results) => {
+        // Respond to the browser immediately — no more timeout risk.
+        res.json({ id: videoId, source });
+        // Run the entire download → S3 upload → analysis pipeline in the background.
+        (async () => {
+          let bgFilePath: string | null = null;
+          try {
+            console.log(`[upload-video-url] [${videoId}] Downloading from ${source}: ${url}`);
+            const downloaded = await downloadVideoFromUrl(url);
+            bgFilePath = downloaded.filePath;
+            console.log(`[upload-video-url] [${videoId}] Downloaded to ${downloaded.filePath}`);
+            // Upload to S3
+            const fileKey = `videos/${Date.now()}-${Math.random().toString(36).substring(7)}.mp4`;
+            const { url: videoUrl } = await storagePutFile(fileKey, downloaded.filePath, "video/mp4");
+            // Update record with real video URL and move to analyzing
+            await db.updateVideoAnalysis(videoId, { videoUrl, status: "analyzing" });
+            console.log(`[upload-video-url] [${videoId}] Uploaded to S3, starting analysis`);
+            // Run AI analysis
+            const results = await analyzeSquashVideoPublic(videoUrl, playerName, playerDescription);
             await db.updateVideoAnalysis(videoId, { status: "complete", analysisResults: results });
-          })
-          .catch(async (error: Error) => {
-            await db.updateVideoAnalysis(videoId, { status: "failed", errorMessage: error.message });
-          });
+            console.log(`[upload-video-url] [${videoId}] Analysis complete`);
+          } catch (bgErr) {
+            console.error(`[upload-video-url] [${videoId}] Background error:`, bgErr);
+            const msg = bgErr instanceof Error ? bgErr.message : String(bgErr);
+            await db.updateVideoAnalysis(videoId, { status: "failed", errorMessage: msg }).catch(() => {});
+          } finally {
+            if (bgFilePath) {
+              try { fs.unlinkSync(bgFilePath); } catch { /* ignore */ }
+              try { fs.rmdirSync(path.dirname(bgFilePath)); } catch { /* ignore */ }
+            }
+          }
+        })();
       } catch (err) {
         console.error("[upload-video-url] error:", err);
         if (!res.headersSent) {
           const msg = err instanceof Error ? err.message : String(err);
           res.status(500).json({ error: "Failed to process video URL", detail: msg });
-        }
-      } finally {
-        if (downloadedFilePath) {
-          try { fs.unlinkSync(downloadedFilePath); } catch { /* ignore */ }
-          try { fs.rmdirSync(path.dirname(downloadedFilePath)); } catch { /* ignore */ }
         }
       }
     },

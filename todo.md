@@ -343,3 +343,9 @@
 ## Bug Fix: Google Drive Download Still Failing (Public File)
 - [x] Fix Google Drive download failing even for publicly shared files
 - [x] Handle Google's large-file virus-scan confirmation page by extracting uuid from the warning HTML and following the real drive.usercontent.google.com URL
+
+## Bug Fix: URL Upload Async (Large File Timeout)
+- [x] Add 'downloading' status to DB schema enum + run migration
+- [x] Make upload-video-url endpoint fully async: create DB record with status='downloading', respond immediately with videoId, run entire download+S3 upload+analysis in background
+- [x] Frontend handles 'downloading' status: polls every 5s, shows blue 'Downloading…' badge on video cards
+- [x] Player detail screen Sessions tab updated to show 'Downloading…' label for in-progress URL downloads

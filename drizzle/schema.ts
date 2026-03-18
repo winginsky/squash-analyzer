@@ -38,12 +38,12 @@ export const videoAnalyses = mysqlTable("video_analyses", {
   playerName: varchar("playerName", { length: 255 }),
   /** Additional details about the player (position, jersey color, etc.) */
   playerDescription: text("playerDescription"),
-  /** S3 URL of the uploaded video file */
-  videoUrl: varchar("videoUrl", { length: 1024 }).notNull(),
+  /** S3 URL of the uploaded video file (empty string while downloading) */
+  videoUrl: varchar("videoUrl", { length: 1024 }).notNull().default(""),
   /** S3 URL of the video thumbnail (extracted from first frame) */
   thumbnailUrl: varchar("thumbnailUrl", { length: 1024 }),
-  /** Analysis status: pending, analyzing, complete, failed */
-  status: mysqlEnum("status", ["pending", "analyzing", "complete", "failed"]).default("pending").notNull(),
+  /** Analysis status: downloading, pending, analyzing, complete, failed */
+  status: mysqlEnum("status", ["downloading", "pending", "analyzing", "complete", "failed"]).default("pending").notNull(),
   /** AI-generated analysis results stored as JSON */
   analysisResults: json("analysisResults"),
   /** Error message if analysis failed */

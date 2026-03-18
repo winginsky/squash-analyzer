@@ -459,7 +459,7 @@ export default function PlayerDetailScreen() {
                   const score = r?.performanceScore;
                   const grade = r?.performanceGrade ?? null;
                   const topSuggestion = r?.suggestions?.[0]?.title;
-                  const statusColor = v.status === "complete" ? "#22C55E" : v.status === "failed" ? "#EF4444" : "#F59E0B";
+                  const statusColor = v.status === "complete" ? "#22C55E" : v.status === "failed" ? "#EF4444" : v.status === "downloading" ? "#0a7ea4" : "#F59E0B";
                   return (
                     <TouchableOpacity
                       key={v.id}
@@ -472,7 +472,7 @@ export default function PlayerDetailScreen() {
                         {grade ? (
                           <Text style={{ fontSize: 14, fontWeight: "800", color: gradeColor(grade) }}>{grade}</Text>
                         ) : (
-                          <Text style={{ fontSize: 9, fontWeight: "700", color: statusColor, textTransform: "uppercase" }}>{v.status === "analyzing" ? "…" : v.status === "failed" ? "✗" : "?"}</Text>
+                          <Text style={{ fontSize: 9, fontWeight: "700", color: statusColor, textTransform: "uppercase" }}>{v.status === "downloading" ? "↓" : v.status === "analyzing" ? "…" : v.status === "failed" ? "✗" : "?"}</Text>
                         )}
                       </View>
                       {/* Info */}
@@ -480,7 +480,7 @@ export default function PlayerDetailScreen() {
                         <Text style={{ fontSize: 14, fontWeight: "600", color: colors.foreground }} numberOfLines={1}>{v.title}</Text>
                         <Text style={{ fontSize: 11, color: colors.muted }}>
                           {new Date(v.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
-                          {v.status === "analyzing" ? " · Analysing…" : v.status === "failed" ? " · Failed" : ""}
+                          {v.status === "downloading" ? " · Downloading…" : v.status === "analyzing" ? " · Analysing…" : v.status === "failed" ? " · Failed" : ""}
                         </Text>
                         {topSuggestion && (
                           <Text style={{ fontSize: 11, color: colors.muted }} numberOfLines={1}>Top: {topSuggestion}</Text>

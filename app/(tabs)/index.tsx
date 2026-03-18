@@ -27,7 +27,7 @@ type VideoAnalysis = {
   playerName?: string;
   date: string;
   dateRaw: Date;
-  status: "analyzing" | "complete" | "failed";
+  status: "downloading" | "analyzing" | "complete" | "failed";
   score?: number;
   grade?: string;
   topSuggestion?: string;
@@ -80,12 +80,12 @@ export default function HomeScreen() {
   // ── Poll while any video is analyzing; detect completion ──────────────────────
   useEffect(() => {
     if (!videosData) return;
-    const hasAnalyzing = videosData.some((v) => v.status === "analyzing" || v.status === "pending");
+    const hasAnalyzing = videosData.some((v) => v.status === "analyzing" || v.status === "pending" || v.status === "downloading");
     // Detect transitions from analyzing → complete
     videosData.forEach((v) => {
       const prev = prevStatusRef.current[String(v.id)];
       const curr = v.status;
-      if ((prev === "analyzing" || prev === "pending") && curr === "complete") {
+      if ((prev === "analyzing" || prev === "pending" || prev === "downloading") && curr === "complete") {
         showBanner(String(v.id), v.title);
       }
       prevStatusRef.current[String(v.id)] = curr;
@@ -107,6 +107,8 @@ export default function HomeScreen() {
           ? "complete"
           : v.status === "failed"
           ? "failed"
+          : v.status === "downloading"
+          ? "downloading"
           : "analyzing",
       score: r?.performanceScore ?? undefined,
       grade: r?.performanceGrade ?? undefined,
@@ -235,7 +237,7 @@ export default function HomeScreen() {
     setUrlError("");
     setUploading(true);
     const srcLabel = source === "youtube" ? "YouTube" : source === "google_drive" ? "Google Drive" : "Google Photos";
-    setUploadProgress(`Downloading from ${srcLabel}… (this may take a minute)`);
+    setUploadProgress(`Queuing download from ${srcLabel}…`);
     try {
       const apiBase = getApiBaseUrl();
       const res = await fetch(`${apiBase}/api/upload-video-url`, {
@@ -249,19 +251,21 @@ export default function HomeScreen() {
         try { const j = await res.json(); errMsg = j.detail || j.error || errMsg; } catch { /* ignore */ }
         throw new Error(errMsg);
       }
+      // Server responds immediately — download + analysis runs in background.
+      // Clear form and start polling for status updates.
       setVideoUrl(""); setTitle(""); setPlayerName(""); setPlayerDescription(""); setUploadProgress("");
       refetch();
     } catch (err) {
       let msg = err instanceof Error ? err.message : "Failed. Please try again.";
       // Translate the GOOGLE_PHOTOS_UNSUPPORTED sentinel into a friendly UI message
       if (msg.includes("GOOGLE_PHOTOS_UNSUPPORTED")) {
-        msg = "Google Photos share links cannot be downloaded automatically.\n\nTo analyse this video:\n• Open it in Google Photos → tap ⋮ → Download, then upload the file\n• Or upload the video to Google Drive and paste a Drive link instead";
+        msg = "Google Photos share links cannot be downloaded automatically.\n\nTo analyse this video:\n\u2022 Open it in Google Photos \u2192 tap \u22ee \u2192 Download, then upload the file\n\u2022 Or upload the video to Google Drive and paste a Drive link instead";
       }
       // Translate the GOOGLE_DRIVE_PRIVATE sentinel into a friendly UI message
       if (msg.includes("GOOGLE_DRIVE_PRIVATE")) {
-        msg = "This Google Drive file is not publicly accessible.\n\nTo fix:\n1. Open the file in Google Drive\n2. Right-click → Share\n3. Change access to \"Anyone with the link can view\"\n4. Copy the share link and paste it here again";
+        msg = "This Google Drive file is not publicly accessible.\n\nTo fix:\n1. Open the file in Google Drive\n2. Right-click \u2192 Share\n3. Change access to \"Anyone with the link can view\"\n4. Copy the share link and paste it here again";
       }
-      setUploadProgress(`❌ ${msg}`);
+      setUploadProgress(`\u274c ${msg}`);
     } finally { setUploading(false); }
   };
   const handleUpload = async () => {
@@ -392,6 +396,8 @@ export default function HomeScreen() {
                   ? colors.success + "33"
                   : item.status === "failed"
                   ? colors.error + "33"
+                  : item.status === "downloading"
+                  ? colors.primary + "33"
                   : colors.warning + "33",
             }}
           >
@@ -404,6 +410,8 @@ export default function HomeScreen() {
                     ? colors.success
                     : item.status === "failed"
                     ? colors.error
+                    : item.status === "downloading"
+                    ? colors.primary
                     : colors.warning,
               }}
             >
@@ -411,6 +419,8 @@ export default function HomeScreen() {
                 ? "Complete"
                 : item.status === "failed"
                 ? "Failed"
+                : item.status === "downloading"
+                ? "Downloading…"
                 : "Analyzing…"}
             </Text>
           </View>
