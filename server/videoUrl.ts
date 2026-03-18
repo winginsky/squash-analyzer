@@ -210,32 +210,23 @@ export async function downloadVideoFromUrl(url: string): Promise<DownloadedVideo
       }
 
       case "google_photos": {
-        // Resolve short links (photos.app.goo.gl) to the full photos.google.com URL first
-        let resolvedUrl = url;
+        // Google Photos share links (photos.google.com/share/... and photos.app.goo.gl)
+        // cannot be downloaded server-side because the video URL is only available after
+        // JavaScript executes in a browser. yt-dlp does not support these URLs.
+        //
+        // lh3.googleusercontent.com direct media URLs (with =dv suffix) do work.
         const urlHost = new URL(url).hostname;
-        if (urlHost === "photos.app.goo.gl" || urlHost === "goo.gl") {
-          try {
-            const headRes = await execFileAsync("curl", [
-              "-s", "-o", "/dev/null",
-              "-w", "%{url_effective}",
-              "-L", "--max-redirs", "10",
-              "-A", "Mozilla/5.0",
-              url,
-            ], { maxBuffer: 1024 * 1024, timeout: 15000 });
-            if (headRes.stdout && headRes.stdout.startsWith("http")) {
-              resolvedUrl = headRes.stdout.trim();
-            }
-          } catch {
-            // If redirect resolution fails, pass the short URL to yt-dlp directly
-          }
-        }
-        const downloadUrl = buildGooglePhotosDownloadUrl(resolvedUrl);
-        const resolvedHost = new URL(resolvedUrl).hostname;
-        if (resolvedHost === "photos.google.com" || resolvedHost === "photos.app.goo.gl" || resolvedHost === "goo.gl") {
-          // photos.google.com share links — use yt-dlp which handles these
-          await downloadYouTube(resolvedUrl, destPath);
-        } else {
+        if (urlHost === "lh3.googleusercontent.com") {
+          const downloadUrl = buildGooglePhotosDownloadUrl(url);
           await downloadDirect(downloadUrl, destPath);
+        } else {
+          // photos.google.com/share or photos.app.goo.gl — not downloadable server-side
+          throw new Error(
+            "GOOGLE_PHOTOS_UNSUPPORTED: Google Photos share links cannot be downloaded automatically. " +
+            "To analyse this video, please: (1) open the video in Google Photos, " +
+            "(2) tap the three-dot menu → Download, (3) upload the downloaded file directly, " +
+            "or (4) upload the video to Google Drive and share a Drive link instead."
+          );
         }
         break;
       }

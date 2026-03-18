@@ -330,3 +330,7 @@
 ## Bug Fix: Google Photos Short-Link
 - [x] Accept photos.app.goo.gl short links in client-side URL validator
 - [x] Resolve goo.gl redirect on server before downloading
+
+## Bug Fix: Google Photos URL Processing Error
+- [x] Diagnose and fix "Failed to process video URL" for photos.app.goo.gl links
+- [x] Improve server-side error messages to surface the real failure reason

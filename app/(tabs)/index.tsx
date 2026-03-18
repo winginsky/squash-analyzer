@@ -206,11 +206,23 @@ export default function HomeScreen() {
     } catch { /* invalid URL */ }
     return null;
   };
+  const isGooglePhotosShareLink = (url: string) => {
+    try {
+      const host = new URL(url).hostname.replace(/^www\./, "");
+      return host === "photos.google.com" || host === "photos.app.goo.gl" || host === "goo.gl";
+    } catch { return false; }
+  };
   const getUrlSourceLabel = (url: string) => {
     const src = detectUrlSource(url);
-    if (src === "youtube") return { icon: "▶", label: "YouTube", color: "#FF0000" };
-    if (src === "google_drive") return { icon: "📁", label: "Google Drive", color: "#4285F4" };
-    if (src === "google_photos") return { icon: "🖼", label: "Google Photos", color: "#34A853" };
+    if (src === "youtube") return { icon: "▶", label: "YouTube", color: "#FF0000", warning: null };
+    if (src === "google_drive") return { icon: "📁", label: "Google Drive", color: "#4285F4", warning: null };
+    if (src === "google_photos") {
+      if (isGooglePhotosShareLink(url)) {
+        return { icon: "⚠️", label: "Google Photos (not supported)", color: "#F59E0B",
+          warning: "Google Photos share links cannot be downloaded. Upload the file directly or use a Google Drive link instead." };
+      }
+      return { icon: "🖼", label: "Google Photos", color: "#34A853", warning: null };
+    }
     return null;
   };
   const handleUploadUrl = async () => {
@@ -238,7 +250,11 @@ export default function HomeScreen() {
       setVideoUrl(""); setTitle(""); setPlayerName(""); setPlayerDescription(""); setUploadProgress("");
       refetch();
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Failed. Please try again.";
+      let msg = err instanceof Error ? err.message : "Failed. Please try again.";
+      // Translate the GOOGLE_PHOTOS_UNSUPPORTED sentinel into a friendly UI message
+      if (msg.includes("GOOGLE_PHOTOS_UNSUPPORTED")) {
+        msg = "Google Photos share links cannot be downloaded automatically.\n\nTo analyse this video:\n• Open it in Google Photos → tap ⋮ → Download, then upload the file\n• Or upload the video to Google Drive and paste a Drive link instead";
+      }
       setUploadProgress(`❌ ${msg}`);
     } finally { setUploading(false); }
   };
@@ -610,12 +626,19 @@ export default function HomeScreen() {
                   const src = getUrlSourceLabel(videoUrl);
                   if (!src) return null;
                   return (
-                    <View style={{ flexDirection: "row", alignItems: "center", marginTop: 6, gap: 6 }}>
-                      <View style={{ backgroundColor: src.color + "20", borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3, flexDirection: "row", alignItems: "center", gap: 4 }}>
-                        <Text style={{ fontSize: 12 }}>{src.icon}</Text>
-                        <Text style={{ fontSize: 12, fontWeight: "600", color: src.color }}>{src.label} detected</Text>
+                    <View style={{ marginTop: 6, gap: 4 }}>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                        <View style={{ backgroundColor: src.color + "20", borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3, flexDirection: "row", alignItems: "center", gap: 4 }}>
+                          <Text style={{ fontSize: 12 }}>{src.icon}</Text>
+                          <Text style={{ fontSize: 12, fontWeight: "600", color: src.color }}>{src.label} detected</Text>
+                        </View>
+                        {!src.warning && <Text style={{ fontSize: 11, color: colors.muted }}>Video will be downloaded server-side</Text>}
                       </View>
-                      <Text style={{ fontSize: 11, color: colors.muted }}>Video will be downloaded server-side</Text>
+                      {src.warning ? (
+                        <View style={{ backgroundColor: colors.warning + "18", borderRadius: 8, padding: 10, borderLeftWidth: 3, borderLeftColor: colors.warning }}>
+                          <Text style={{ fontSize: 12, color: colors.foreground, lineHeight: 18 }}>{src.warning}</Text>
+                        </View>
+                      ) : null}
                     </View>
                   );
                 })() : null}
@@ -625,7 +648,7 @@ export default function HomeScreen() {
                     {[
                       { icon: "▶", label: "YouTube", hint: "Any public or unlisted video", color: "#FF0000" },
                       { icon: "📁", label: "Google Drive", hint: 'Share link with "Anyone with the link"', color: "#4285F4" },
-                      { icon: "🖼", label: "Google Photos", hint: "Shared album or photo link", color: "#34A853" },
+                      { icon: "🖼", label: "Google Photos", hint: "Direct lh3.googleusercontent.com links only", color: "#34A853" },
                     ].map((s) => (
                       <View key={s.label} style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                         <View style={{ width: 28, height: 28, borderRadius: 8, backgroundColor: s.color + "15", alignItems: "center", justifyContent: "center" }}>
