@@ -149,9 +149,11 @@ async function startServer() {
 
         // Respond immediately so the browser isn't waiting
         res.json({ id: videoId, videoUrl });
-
-        // Run analysis asynchronously after responding
-        analyzeSquashVideoPublic(videoUrl, playerName, playerDescription)
+        // Run analysis asynchronously after responding.
+        // Pass the LOCAL temp file path so extractAndUploadFrames does not
+        // re-download the video from S3 (avoids OOM for large files).
+        const localPath = tmpFilePath;
+        analyzeSquashVideoPublic(localPath, playerName, playerDescription)
           .then(async (results) => {
             await db.updateVideoAnalysis(videoId, {
               status: "complete",
@@ -163,22 +165,26 @@ async function startServer() {
               status: "failed",
               errorMessage: error.message,
             });
+          })
+          .finally(() => {
+            // Clean up temp file only after analysis completes
+            if (localPath) {
+              try { fs.unlinkSync(localPath); } catch { /* ignore */ }
+            }
           });
       } catch (err) {
         console.error("[upload-video] error:", err);
         if (!res.headersSent) {
           res.status(500).json({ error: "Upload failed", detail: String(err) });
         }
-      } finally {
-        // Clean up temp file
+        // Clean up temp file on error (analysis never started)
         if (tmpFilePath) {
           try { fs.unlinkSync(tmpFilePath); } catch { /* ignore */ }
         }
       }
     },
   );
-
-  // ── URL-based video ingestion endpoint ─────────────────────────────────────
+  // ── URL-based video ingestion endpointt ─────────────────────────────────────
   // Accepts a YouTube, Google Drive, or Google Photos URL, downloads the video
   // server-side, uploads it to S3, and kicks off analysis — same pipeline as
   // the file upload endpoint but without multipart form data.
@@ -235,14 +241,16 @@ async function startServer() {
             const downloaded = await downloadVideoFromUrl(url);
             bgFilePath = downloaded.filePath;
             console.log(`[upload-video-url] [${videoId}] Downloaded to ${downloaded.filePath}`);
-            // Upload to S3
+            // Upload to S3 (streaming — does not load file into RAM)
             const fileKey = `videos/${Date.now()}-${Math.random().toString(36).substring(7)}.mp4`;
             const { url: videoUrl } = await storagePutFile(fileKey, downloaded.filePath, "video/mp4");
             // Update record with real video URL and move to analyzing
             await db.updateVideoAnalysis(videoId, { videoUrl, status: "analyzing" });
             console.log(`[upload-video-url] [${videoId}] Uploaded to S3, starting analysis`);
-            // Run AI analysis
-            const results = await analyzeSquashVideoPublic(videoUrl, playerName, playerDescription);
+            // Run AI analysis — pass the LOCAL file path so extractAndUploadFrames
+            // does NOT re-download the 800MB file from S3 (which would OOM the server).
+            // The local file is cleaned up in the finally block after analysis completes.
+            const results = await analyzeSquashVideoPublic(downloaded.filePath, playerName, playerDescription);
             await db.updateVideoAnalysis(videoId, { status: "complete", analysisResults: results });
             console.log(`[upload-video-url] [${videoId}] Analysis complete`);
           } catch (bgErr) {

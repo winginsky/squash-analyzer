@@ -2,6 +2,9 @@
 // Uses the Biz-provided storage proxy (Authorization: Bearer <token>)
 
 import { ENV } from "./_core/env";
+import FormDataNode from "form-data";
+import { createReadStream, statSync } from "fs";
+import nodeFetch from "node-fetch";
 
 type StorageConfig = { baseUrl: string; apiKey: string };
 
@@ -31,7 +34,7 @@ async function buildDownloadUrl(baseUrl: string, relKey: string, apiKey: string)
     method: "GET",
     headers: buildAuthHeaders(apiKey),
   });
-  return (await response.json()).url;
+  return (await response.json() as { url: string }).url;
 }
 
 function ensureTrailingSlash(value: string): string {
@@ -56,23 +59,45 @@ function toFormData(
   return form;
 }
 
-function toFormDataFromPath(
+function buildAuthHeaders(apiKey: string): HeadersInit {
+  return { Authorization: `Bearer ${apiKey}` };
+}
+
+/**
+ * Streaming multipart upload using node-fetch + form-data npm package.
+ * Pipes the file via fs.createReadStream — never loads the whole file into RAM.
+ * Safe for files of any size (800MB+).
+ */
+async function storagePutFileStreaming(
+  uploadUrl: URL,
+  apiKey: string,
   filePath: string,
   contentType: string,
   fileName: string,
-): FormData {
-  // Read file as buffer and wrap in a Blob — avoids keeping the entire
-  // buffer in scope any longer than needed for the upload.
-  const { readFileSync } = require("fs") as typeof import("fs");
-  const buffer = readFileSync(filePath);
-  const blob = new Blob([buffer], { type: contentType });
-  const form = new FormData();
-  form.append("file", blob, fileName || "file");
-  return form;
-}
-
-function buildAuthHeaders(apiKey: string): HeadersInit {
-  return { Authorization: `Bearer ${apiKey}` };
+): Promise<string> {
+  const form = new FormDataNode();
+  const fileSize = statSync(filePath).size;
+  form.append("file", createReadStream(filePath), {
+    filename: fileName,
+    contentType,
+    knownLength: fileSize,
+  });
+  const response = await nodeFetch(uploadUrl.toString(), {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      ...form.getHeaders(),
+    },
+    body: form,
+  });
+  if (!response.ok) {
+    const message = await response.text().catch(() => response.statusText);
+    throw new Error(
+      `Storage upload failed (${response.status} ${response.statusText}): ${message}`,
+    );
+  }
+  const json = await response.json() as { url: string };
+  return json.url;
 }
 
 export async function storagePut(
@@ -96,14 +121,14 @@ export async function storagePut(
       `Storage upload failed (${response.status} ${response.statusText}): ${message}`,
     );
   }
-  const url = (await response.json()).url;
+  const url = (await response.json() as { url: string }).url;
   return { key, url };
 }
 
 /**
  * Upload a file directly from a local file path to storage.
- * More memory-efficient than storagePut for large files since it reads
- * the file only once and does not keep the buffer in scope after the upload.
+ * Uses streaming (fs.createReadStream via node-fetch + form-data) to avoid
+ * loading the entire file into memory — safe for large files (800MB+).
  */
 export async function storagePutFile(
   relKey: string,
@@ -113,20 +138,8 @@ export async function storagePutFile(
   const { baseUrl, apiKey } = getStorageConfig();
   const key = normalizeKey(relKey);
   const uploadUrl = buildUploadUrl(baseUrl, key);
-  const formData = toFormDataFromPath(filePath, contentType, key.split("/").pop() ?? key);
-  const response = await fetch(uploadUrl, {
-    method: "POST",
-    headers: buildAuthHeaders(apiKey),
-    body: formData,
-  });
-
-  if (!response.ok) {
-    const message = await response.text().catch(() => response.statusText);
-    throw new Error(
-      `Storage upload failed (${response.status} ${response.statusText}): ${message}`,
-    );
-  }
-  const url = (await response.json()).url;
+  const fileName = key.split("/").pop() ?? key;
+  const url = await storagePutFileStreaming(uploadUrl, apiKey, filePath, contentType, fileName);
   return { key, url };
 }
 

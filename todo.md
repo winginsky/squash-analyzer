@@ -349,3 +349,12 @@
 - [x] Make upload-video-url endpoint fully async: create DB record with status='downloading', respond immediately with videoId, run entire download+S3 upload+analysis in background
 - [x] Frontend handles 'downloading' status: polls every 5s, shows blue 'Downloading…' badge on video cards
 - [x] Player detail screen Sessions tab updated to show 'Downloading…' label for in-progress URL downloads
+
+## Bug Fix: URL Upload Still Failing After Async Refactor
+- [x] Diagnose root cause: server OOM crash during S3 upload of 800MB file (readFileSync loaded entire file into RAM)
+- [x] Fix 1: Replace readFileSync in storagePutFile with node-fetch + form-data streaming upload (never loads file into RAM)
+- [x] Fix 2: Pass local file path to analyzeSquashVideoPublic so extractAndUploadFrames does NOT re-download the 800MB file from S3
+- [x] Fix 3: Update videoFrames.ts to accept local file path (skips download when given a local path)
+- [x] Fix 4: Add 30-min timeout to curl download commands for large files
+- [x] Fix 5: Set NODE_OPTIONS=--max-old-space-size=1536 for server process
+- [x] Verified end-to-end: record 360008 shows status='complete' with real CloudFront URL after full pipeline

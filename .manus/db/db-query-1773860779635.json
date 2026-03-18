@@ -1,0 +1,45 @@
+{
+  "query": "SELECT id, title, status, LEFT(videoUrl, 60) as videoUrl, createdAt FROM video_analyses ORDER BY id DESC LIMIT 5;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user QwrFpHdig3uztGQ.root --database ENhuhCf7SLWoUcgY9QEkFN --execute SELECT id, title, status, LEFT(videoUrl, 60) as videoUrl, createdAt FROM video_analyses ORDER BY id DESC LIMIT 5;",
+  "rows": [
+    {
+      "id": "360008",
+      "title": "Final Test",
+      "status": "complete",
+      "videoUrl": "https://d2xsxph8kpxj0f.cloudfront.net/310519663348199059/ENh",
+      "createdAt": "2026-03-18 19:01:03"
+    },
+    {
+      "id": "360006",
+      "title": "Player-Specific Analysis",
+      "status": "pending",
+      "videoUrl": "https://example.com/player-video.mp4",
+      "createdAt": "2026-03-18 19:00:33"
+    },
+    {
+      "id": "360005",
+      "title": "New Test Video",
+      "status": "pending",
+      "videoUrl": "https://example.com/new-video.mp4",
+      "createdAt": "2026-03-18 19:00:33"
+    },
+    {
+      "id": "360004",
+      "title": "Test Squash Game",
+      "status": "complete",
+      "videoUrl": "https://example.com/test-video.mp4",
+      "createdAt": "2026-03-18 19:00:33"
+    },
+    {
+      "id": "360003",
+      "title": "Streaming Test",
+      "status": "analyzing",
+      "videoUrl": "https://d2xsxph8kpxj0f.cloudfront.net/310519663348199059/ENh",
+      "createdAt": "2026-03-18 18:53:24"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\ttitle\tstatus\tvideoUrl\tcreatedAt\n360008\tFinal Test\tcomplete\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663348199059/ENh\t2026-03-18 19:01:03\n360006\tPlayer-Specific Analysis\tpending\thttps://example.com/player-video.mp4\t2026-03-18 19:00:33\n360005\tNew Test Video\tpending\thttps://example.com/new-video.mp4\t2026-03-18 19:00:33\n360004\tTest Squash Game\tcomplete\thttps://example.com/test-video.mp4\t2026-03-18 19:00:33\n360003\tStreaming Test\tanalyzing\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663348199059/ENh\t2026-03-18 18:53:24\n",
+  "stderr": "",
+  "execution_time_ms": 200
+}

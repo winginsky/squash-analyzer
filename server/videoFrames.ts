@@ -1,17 +1,24 @@
 /**
  * Video frame extraction utility.
  *
- * Downloads a video from a URL, uses ffmpeg to extract evenly-spaced frames
- * across the full duration, uploads each frame to S3, and returns their URLs
- * along with the timestamp (in seconds) each frame was taken from.
+ * Accepts a local video file path (or a URL for backward-compat), uses ffmpeg
+ * to extract evenly-spaced frames across the full duration, uploads each frame
+ * to S3, and returns their URLs along with the timestamp (in seconds) each
+ * frame was taken from.
+ *
+ * IMPORTANT: When called from the upload pipeline, always pass the local
+ * temp file path instead of the S3 URL to avoid downloading the 800MB video
+ * a second time (which causes OOM crashes on the 4GB sandbox).
  */
-
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { storagePut } from "./storage";
+import { createWriteStream } from "fs";
+import { pipeline } from "stream/promises";
+import nodeFetch from "node-fetch";
 
 const execFileAsync = promisify(execFile);
 
@@ -58,15 +65,16 @@ async function extractFrame(
 }
 
 /**
- * Download a video from a URL to a temp file.
+ * Download a video from a URL to a local file path using streaming.
+ * Uses node-fetch + stream pipeline to avoid loading the entire file into RAM.
  */
-async function downloadVideo(url: string, destPath: string): Promise<void> {
-  const response = await fetch(url);
-  if (!response.ok) {
+async function downloadVideoStreaming(url: string, destPath: string): Promise<void> {
+  const response = await nodeFetch(url);
+  if (!response.ok || !response.body) {
     throw new Error(`Failed to download video: ${response.status} ${response.statusText}`);
   }
-  const buffer = Buffer.from(await response.arrayBuffer());
-  fs.writeFileSync(destPath, buffer);
+  const dest = createWriteStream(destPath);
+  await pipeline(response.body, dest);
 }
 
 /**
@@ -79,26 +87,53 @@ export function formatTimestamp(seconds: number): string {
 }
 
 /**
- * Extract evenly-spaced frames from a video URL and upload them to S3.
+ * Extract evenly-spaced frames from a video and upload them to S3.
  *
- * @param videoUrl   Public URL of the video (S3/CloudFront)
- * @param frameCount Number of frames to extract (default 12)
+ * @param videoSource  Either a local file path (preferred for large files) or
+ *                     a public URL. When a local path is provided, no download
+ *                     occurs — the file is used directly, saving ~800MB of RAM.
+ * @param frameCount   Number of frames to extract (default 12)
  * @returns Array of ExtractedFrame objects with URL and timestamp
  */
 export async function extractAndUploadFrames(
-  videoUrl: string,
+  videoSource: string,
   frameCount = 12,
 ): Promise<ExtractedFrame[]> {
+  // Determine if videoSource is a local file or a URL
+  const isLocalFile = !videoSource.startsWith("http://") && !videoSource.startsWith("https://");
+
+  if (isLocalFile) {
+    // Use the local file directly — no download needed
+    return extractFramesFromLocalFile(videoSource, frameCount);
+  }
+
+  // For URL sources: stream-download to a temp file, then extract frames
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "squash-frames-"));
   const videoPath = path.join(tmpDir, "video.mp4");
-
   try {
-    console.log(`[frames] Downloading video from ${videoUrl}`);
-    await downloadVideo(videoUrl, videoPath);
+    console.log(`[frames] Streaming download from ${videoSource}`);
+    await downloadVideoStreaming(videoSource, videoPath);
+    return await extractFramesFromLocalFile(videoPath, frameCount);
+  } finally {
+    try {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    } catch {
+      // ignore cleanup errors
+    }
+  }
+}
 
+/**
+ * Internal: extract frames from a local video file and upload to S3.
+ */
+async function extractFramesFromLocalFile(
+  videoPath: string,
+  frameCount: number,
+): Promise<ExtractedFrame[]> {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "squash-frames-"));
+  try {
     const duration = await getVideoDuration(videoPath);
     console.log(`[frames] Video duration: ${duration.toFixed(1)}s`);
-
     if (duration <= 0) {
       throw new Error("Could not determine video duration");
     }
@@ -112,11 +147,9 @@ export async function extractAndUploadFrames(
     );
 
     const frames: ExtractedFrame[] = [];
-
     for (let i = 0; i < timestamps.length; i++) {
       const ts = timestamps[i];
       const framePath = path.join(tmpDir, `frame-${i}.jpg`);
-
       console.log(`[frames] Extracting frame ${i + 1}/${frameCount} at ${ts.toFixed(1)}s`);
       await extractFrame(videoPath, ts, framePath);
 
@@ -128,7 +161,6 @@ export async function extractAndUploadFrames(
       const frameBuffer = fs.readFileSync(framePath);
       const uploadKey = `frames/${Date.now()}-frame-${i}.jpg`;
       const { url } = await storagePut(uploadKey, frameBuffer, "image/jpeg");
-
       frames.push({ index: i, url, timestampSec: ts });
     }
 

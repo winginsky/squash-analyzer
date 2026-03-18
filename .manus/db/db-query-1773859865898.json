@@ -1,0 +1,31 @@
+{
+  "query": "SELECT id, title, status, videoUrl, createdAt FROM video_analyses ORDER BY id DESC LIMIT 3;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user QwrFpHdig3uztGQ.root --database ENhuhCf7SLWoUcgY9QEkFN --execute SELECT id, title, status, videoUrl, createdAt FROM video_analyses ORDER BY id DESC LIMIT 3;",
+  "rows": [
+    {
+      "id": "360002",
+      "title": "Test Async Drive",
+      "status": "downloading",
+      "videoUrl": "",
+      "createdAt": "2026-03-18 18:50:35"
+    },
+    {
+      "id": "360001",
+      "title": "Test Drive",
+      "status": "downloading",
+      "videoUrl": "",
+      "createdAt": "2026-03-18 18:45:57"
+    },
+    {
+      "id": "330021",
+      "title": "Player-Specific Analysis",
+      "status": "pending",
+      "videoUrl": "https://example.com/player-video.mp4",
+      "createdAt": "2026-03-18 18:21:49"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\ttitle\tstatus\tvideoUrl\tcreatedAt\n360002\tTest Async Drive\tdownloading\t\t2026-03-18 18:50:35\n360001\tTest Drive\tdownloading\t\t2026-03-18 18:45:57\n330021\tPlayer-Specific Analysis\tpending\thttps://example.com/player-video.mp4\t2026-03-18 18:21:49\n",
+  "stderr": "",
+  "execution_time_ms": 61
+}

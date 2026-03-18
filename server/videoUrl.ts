@@ -158,7 +158,7 @@ async function downloadDirect(url: string, destPath: string): Promise<void> {
     "--cookie", "download_warning=1",
     "-o", destPath,
     url,
-  ], { maxBuffer: 10 * 1024 * 1024 });
+  ], { maxBuffer: 10 * 1024 * 1024, timeout: 30 * 60 * 1000 }); // 30 min for large files
 
   if (!fs.existsSync(destPath) || fs.statSync(destPath).size < 1024) {
     throw new Error(`Download produced an empty or missing file. ${stderr}`);
@@ -201,7 +201,7 @@ async function downloadDirect(url: string, destPath: string): Promise<void> {
       "-A", UA,
       "-o", destPath,
       realUrl,
-    ], { maxBuffer: 10 * 1024 * 1024 });
+    ], { maxBuffer: 10 * 1024 * 1024, timeout: 30 * 60 * 1000 }); // 30 min for large files
 
     if (!fs.existsSync(destPath) || fs.statSync(destPath).size < 1024) {
       throw new Error(`Google Drive virus-scan bypass download failed. ${stderr2}`);
