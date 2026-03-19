@@ -17,6 +17,22 @@ import { promisify } from "util";
 
 const execFileAsync = promisify(execFile);
 
+/**
+ * A clean environment for spawning Python-based tools (yt-dlp, curl).
+ * Strips PYTHONHOME and PYTHONPATH which the Manus sandbox runtime sets to
+ * Python 3.13 paths. When inherited by child processes, these cause the
+ * "SRE module mismatch" AssertionError because Python 3.11 (the system
+ * interpreter used by yt-dlp's shebang) tries to load Python 3.13's
+ * C extension modules.
+ */
+const cleanEnv = ((): NodeJS.ProcessEnv => {
+  const env = { ...process.env };
+  delete env.PYTHONHOME;
+  delete env.PYTHONPATH;
+  delete env.NUITKA_PYTHONPATH;
+  return env;
+})();
+
 export type VideoSource = "youtube" | "google_drive" | "google_photos" | "direct";
 
 export interface DownloadedVideo {
@@ -158,7 +174,7 @@ async function downloadDirect(url: string, destPath: string): Promise<void> {
     "--cookie", "download_warning=1",
     "-o", destPath,
     url,
-  ], { maxBuffer: 10 * 1024 * 1024, timeout: 30 * 60 * 1000 }); // 30 min for large files
+  ], { maxBuffer: 10 * 1024 * 1024, timeout: 30 * 60 * 1000, env: cleanEnv }); // 30 min for large files
 
   if (!fs.existsSync(destPath) || fs.statSync(destPath).size < 1024) {
     throw new Error(`Download produced an empty or missing file. ${stderr}`);
@@ -201,7 +217,7 @@ async function downloadDirect(url: string, destPath: string): Promise<void> {
       "-A", UA,
       "-o", destPath,
       realUrl,
-    ], { maxBuffer: 10 * 1024 * 1024, timeout: 30 * 60 * 1000 }); // 30 min for large files
+    ], { maxBuffer: 10 * 1024 * 1024, timeout: 30 * 60 * 1000, env: cleanEnv }); // 30 min for large files
 
     if (!fs.existsSync(destPath) || fs.statSync(destPath).size < 1024) {
       throw new Error(`Google Drive virus-scan bypass download failed. ${stderr2}`);
@@ -232,13 +248,31 @@ async function downloadDirect(url: string, destPath: string): Promise<void> {
  */
 async function downloadYouTube(url: string, destPath: string): Promise<void> {
   // yt-dlp format: best mp4 up to 1080p, merge into single file
-  const { stderr } = await execFileAsync("yt-dlp", [
-    "-f", "bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4][height<=1080]/best",
-    "--merge-output-format", "mp4",
-    "--no-playlist",
-    "-o", destPath,
-    url,
-  ], { maxBuffer: 10 * 1024 * 1024, timeout: 5 * 60 * 1000 }); // 5 min timeout
+  // Use Node.js as the JS runtime (required for YouTube extraction)
+  const nodePath = process.execPath.replace(/node$/, "node");
+  let stderr = "";
+  try {
+    const result = await execFileAsync("yt-dlp", [
+      "--js-runtimes", `node:${nodePath}`,
+      "-f", "bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4][height<=1080]/best",
+      "--merge-output-format", "mp4",
+      "--no-playlist",
+      "-o", destPath,
+      url,
+    ], { maxBuffer: 10 * 1024 * 1024, timeout: 5 * 60 * 1000, env: cleanEnv }); // 5 min timeout
+    stderr = result.stderr;
+  } catch (err: unknown) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    // Detect YouTube bot/login detection error and provide a clear user-facing message
+    if (errMsg.includes("Sign in to confirm") || errMsg.includes("not a bot") || errMsg.includes("cookies")) {
+      throw new Error(
+        "YOUTUBE_BOT_DETECTION: YouTube requires authentication to download from this server. " +
+        "Please upload the video to Google Drive and share it as \"Anyone with the link can view\", " +
+        "then paste the Google Drive link instead."
+      );
+    }
+    throw new Error(`yt-dlp failed: ${errMsg}`);
+  }
 
   if (!fs.existsSync(destPath) || fs.statSync(destPath).size < 1024) {
     throw new Error(`yt-dlp failed to download video. ${stderr}`);

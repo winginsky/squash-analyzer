@@ -1,0 +1,24 @@
+{
+  "query": "SELECT id, title, status, LEFT(errorMessage, 100) as err, createdAt FROM video_analyses WHERE id >= 390000 ORDER BY id DESC LIMIT 5;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user QwrFpHdig3uztGQ.root --database ENhuhCf7SLWoUcgY9QEkFN --execute SELECT id, title, status, LEFT(errorMessage, 100) as err, createdAt FROM video_analyses WHERE id >= 390000 ORDER BY id DESC LIMIT 5;",
+  "rows": [
+    {
+      "id": "390002",
+      "title": "YouTube Test",
+      "status": "failed",
+      "err": "Command failed: yt-dlp -f bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4][height<=",
+      "createdAt": "2026-03-19 01:29:53"
+    },
+    {
+      "id": "390001",
+      "title": "Joshua vs. Winston",
+      "status": "failed",
+      "err": "Failed to analyze video",
+      "createdAt": "2026-03-19 01:23:44"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\ttitle\tstatus\terr\tcreatedAt\n390002\tYouTube Test\tfailed\tCommand failed: yt-dlp -f bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4][height<=\t2026-03-19 01:29:53\n390001\tJoshua vs. Winston\tfailed\tFailed to analyze video\t2026-03-19 01:23:44\n",
+  "stderr": "",
+  "execution_time_ms": 127
+}

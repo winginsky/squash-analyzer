@@ -358,3 +358,10 @@
 - [x] Fix 4: Add 30-min timeout to curl download commands for large files
 - [x] Fix 5: Set NODE_OPTIONS=--max-old-space-size=1536 for server process
 - [x] Verified end-to-end: record 360008 shows status='complete' with real CloudFront URL after full pipeline
+
+## Bug Fix: yt-dlp Broken (YouTube URL Fails)
+- [x] Fix root cause: PYTHONHOME/PYTHONPATH env vars from Manus sandbox runtime caused SRE module mismatch
+- [x] Fix: strip PYTHONHOME, PYTHONPATH, NUITKA_PYTHONPATH from child process env (cleanEnv)
+- [x] Fix: pass Node.js path explicitly to yt-dlp via --js-runtimes flag
+- [x] Fix: detect YouTube bot-detection error and show clear user-facing message suggesting Google Drive instead
+- [x] Note: YouTube downloads from cloud IPs are blocked by YouTube (IP ban) - fundamental limitation, not a code bug

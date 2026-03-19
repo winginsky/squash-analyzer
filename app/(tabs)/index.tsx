@@ -433,7 +433,7 @@ export default function HomeScreen() {
         <Text style={{ fontSize: 13, color: colors.muted }}>{item.date}</Text>
         {item.status === "failed" && item.errorMessage ? (
           <Text style={{ fontSize: 12, color: colors.error, marginTop: 4, lineHeight: 16 }} numberOfLines={3}>
-            {item.errorMessage.replace(/^GOOGLE_DRIVE_PRIVATE:\s*/i, "").replace(/^GOOGLE_PHOTOS_UNSUPPORTED:\s*/i, "")}
+            {item.errorMessage.replace(/^GOOGLE_DRIVE_PRIVATE:\s*/i, "").replace(/^GOOGLE_PHOTOS_UNSUPPORTED:\s*/i, "").replace(/^YOUTUBE_BOT_DETECTION:\s*/i, "")}
           </Text>
         ) : null}
       </View>
