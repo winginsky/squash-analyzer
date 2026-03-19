@@ -1,0 +1,15 @@
+{
+  "query": "SELECT id, status, errorMessage FROM video_analyses WHERE id = 420010;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user QwrFpHdig3uztGQ.root --database ENhuhCf7SLWoUcgY9QEkFN --execute SELECT id, status, errorMessage FROM video_analyses WHERE id = 420010;",
+  "rows": [
+    {
+      "id": "420010",
+      "status": "failed",
+      "errorMessage": "YOUTUBE_BOT_DETECTION: YouTube requires authentication to download from this server. Please upload the video to Google Drive and share it as \"Anyone with the link can view\", then paste the Google Drive link instead."
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tstatus\terrorMessage\n420010\tfailed\tYOUTUBE_BOT_DETECTION: YouTube requires authentication to download from this server. Please upload the video to Google Drive and share it as \"Anyone with the link can view\", then paste the Google Drive link instead.\n",
+  "stderr": "",
+  "execution_time_ms": 64
+}

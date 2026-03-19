@@ -371,3 +371,9 @@
 - [x] Fixed: re-throw with original error message so callers surface the real reason to the user
 - [x] Confirmed: YouTube bot detection error now shows correctly in UI with YOUTUBE_BOT_DETECTION prefix stripped
 - [x] All 32 tests pass, 0 TypeScript errors
+
+## Bug Fix: ffprobe Fails After YouTube Download
+- [x] Root cause: yt-dlp exits with code 0 even on bot-detection errors (known yt-dlp bug)
+- [x] Fix: check stderr for bot-detection keywords AFTER execFileAsync succeeds (not just in catch block)
+- [x] Fix: if file missing despite exit code 0, extract real reason from stderr ERROR: line
+- [x] Verified: record 420010 shows correct YOUTUBE_BOT_DETECTION error, no more ffprobe crash

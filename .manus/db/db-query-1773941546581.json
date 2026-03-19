@@ -1,0 +1,50 @@
+{
+  "query": "SELECT id, status, errorMessage, videoUrl, playerName, createdAt FROM video_analyses ORDER BY id DESC LIMIT 5;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user QwrFpHdig3uztGQ.root --database ENhuhCf7SLWoUcgY9QEkFN --execute SELECT id, status, errorMessage, videoUrl, playerName, createdAt FROM video_analyses ORDER BY id DESC LIMIT 5;",
+  "rows": [
+    {
+      "id": "420004",
+      "status": "pending",
+      "errorMessage": "NULL",
+      "videoUrl": "https://example.com/player-video.mp4",
+      "playerName": "John Doe",
+      "createdAt": "2026-03-19 17:12:18"
+    },
+    {
+      "id": "420003",
+      "status": "pending",
+      "errorMessage": "NULL",
+      "videoUrl": "https://example.com/new-video.mp4",
+      "playerName": "NULL",
+      "createdAt": "2026-03-19 17:12:18"
+    },
+    {
+      "id": "420002",
+      "status": "complete",
+      "errorMessage": "NULL",
+      "videoUrl": "https://example.com/test-video.mp4",
+      "playerName": "NULL",
+      "createdAt": "2026-03-19 17:12:18"
+    },
+    {
+      "id": "420001",
+      "status": "failed",
+      "errorMessage": "YOUTUBE_BOT_DETECTION: YouTube requires authentication to download from this server. Please upload the video to Google Drive and share it as \"Anyone with the link can view\", then paste the Google Drive link instead.",
+      "videoUrl": "",
+      "playerName": "NULL",
+      "createdAt": "2026-03-19 17:10:06"
+    },
+    {
+      "id": "390006",
+      "status": "pending",
+      "errorMessage": "NULL",
+      "videoUrl": "https://example.com/player-video.mp4",
+      "playerName": "John Doe",
+      "createdAt": "2026-03-19 01:36:46"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tstatus\terrorMessage\tvideoUrl\tplayerName\tcreatedAt\n420004\tpending\tNULL\thttps://example.com/player-video.mp4\tJohn Doe\t2026-03-19 17:12:18\n420003\tpending\tNULL\thttps://example.com/new-video.mp4\tNULL\t2026-03-19 17:12:18\n420002\tcomplete\tNULL\thttps://example.com/test-video.mp4\tNULL\t2026-03-19 17:12:18\n420001\tfailed\tYOUTUBE_BOT_DETECTION: YouTube requires authentication to download from this server. Please upload the video to Google Drive and share it as \"Anyone with the link can view\", then paste the Google Drive link instead.\t\tNULL\t2026-03-19 17:10:06\n390006\tpending\tNULL\thttps://example.com/player-video.mp4\tJohn Doe\t2026-03-19 01:36:46\n",
+  "stderr": "",
+  "execution_time_ms": 113
+}

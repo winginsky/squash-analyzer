@@ -251,6 +251,27 @@ async function downloadYouTube(url: string, destPath: string): Promise<void> {
   // Use Node.js as the JS runtime (required for YouTube extraction)
   const nodePath = process.execPath.replace(/node$/, "node");
   let stderr = "";
+
+  /**
+   * Helper: check stderr/errMsg for YouTube bot-detection and throw a clear error.
+   * yt-dlp sometimes exits with code 0 even on bot-detection errors, so we must
+   * check stderr regardless of whether execFileAsync threw.
+   */
+  function checkForBotDetection(msg: string): void {
+    if (
+      msg.includes("Sign in to confirm") ||
+      msg.includes("not a bot") ||
+      msg.includes("cookies") ||
+      msg.includes("authentication")
+    ) {
+      throw new Error(
+        "YOUTUBE_BOT_DETECTION: YouTube requires authentication to download from this server. " +
+        "Please upload the video to Google Drive and share it as \"Anyone with the link can view\", " +
+        "then paste the Google Drive link instead."
+      );
+    }
+  }
+
   try {
     const result = await execFileAsync("yt-dlp", [
       "--js-runtimes", `node:${nodePath}`,
@@ -264,18 +285,18 @@ async function downloadYouTube(url: string, destPath: string): Promise<void> {
   } catch (err: unknown) {
     const errMsg = err instanceof Error ? err.message : String(err);
     // Detect YouTube bot/login detection error and provide a clear user-facing message
-    if (errMsg.includes("Sign in to confirm") || errMsg.includes("not a bot") || errMsg.includes("cookies")) {
-      throw new Error(
-        "YOUTUBE_BOT_DETECTION: YouTube requires authentication to download from this server. " +
-        "Please upload the video to Google Drive and share it as \"Anyone with the link can view\", " +
-        "then paste the Google Drive link instead."
-      );
-    }
+    checkForBotDetection(errMsg);
     throw new Error(`yt-dlp failed: ${errMsg}`);
   }
 
+  // yt-dlp has a known bug where it exits with code 0 even on bot-detection errors.
+  // Always check stderr for bot-detection messages, even when execFileAsync succeeded.
+  checkForBotDetection(stderr);
+
   if (!fs.existsSync(destPath) || fs.statSync(destPath).size < 1024) {
-    throw new Error(`yt-dlp failed to download video. ${stderr}`);
+    // File missing despite exit code 0 — check stderr for the real reason
+    const reason = stderr.includes("ERROR:") ? stderr.split("ERROR:").pop()?.trim() ?? stderr : stderr;
+    throw new Error(`yt-dlp failed to produce a video file. ${reason}`);
   }
 }
 
