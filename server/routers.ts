@@ -264,7 +264,9 @@ Return the full JSON with gameStats, strategyOverview, and suggestions.`,
     return { gameStats, strategyOverview, suggestions, performanceScore, performanceGrade };
   } catch (error) {
     console.error("Video analysis failed:", error);
-    throw new Error("Failed to analyze video");
+    // Re-throw with the original message so callers can surface it to the user
+    const msg = error instanceof Error ? error.message : String(error);
+    throw new Error(msg || "Failed to analyze video");
   }
 }
 

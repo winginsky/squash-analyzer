@@ -1,0 +1,61 @@
+{
+  "query": "SELECT id, status, errorMessage, videoUrl, createdAt FROM video_analyses ORDER BY createdAt DESC LIMIT 8;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user QwrFpHdig3uztGQ.root --database ENhuhCf7SLWoUcgY9QEkFN --execute SELECT id, status, errorMessage, videoUrl, createdAt FROM video_analyses ORDER BY createdAt DESC LIMIT 8;",
+  "rows": [
+    {
+      "id": "390006",
+      "status": "pending",
+      "errorMessage": "NULL",
+      "videoUrl": "https://example.com/player-video.mp4",
+      "createdAt": "2026-03-19 01:36:46"
+    },
+    {
+      "id": "390005",
+      "status": "pending",
+      "errorMessage": "NULL",
+      "videoUrl": "https://example.com/new-video.mp4",
+      "createdAt": "2026-03-19 01:36:46"
+    },
+    {
+      "id": "390004",
+      "status": "complete",
+      "errorMessage": "NULL",
+      "videoUrl": "https://example.com/test-video.mp4",
+      "createdAt": "2026-03-19 01:36:46"
+    },
+    {
+      "id": "390001",
+      "status": "failed",
+      "errorMessage": "Failed to analyze video",
+      "videoUrl": "",
+      "createdAt": "2026-03-19 01:23:44"
+    },
+    {
+      "id": "360009",
+      "status": "complete",
+      "errorMessage": "NULL",
+      "videoUrl": "https://d2xsxph8kpxj0f.cloudfront.net/310519663348199059/ENhuhCf7SLWoUcgY9QEkFN/videos/1773862932867-ympbz.mp4",
+      "createdAt": "2026-03-18 19:41:57"
+    },
+    {
+      "id": "360008",
+      "status": "complete",
+      "errorMessage": "NULL",
+      "videoUrl": "https://d2xsxph8kpxj0f.cloudfront.net/310519663348199059/ENhuhCf7SLWoUcgY9QEkFN/videos/1773860479282-9xr2er.mp4",
+      "createdAt": "2026-03-18 19:01:03"
+    }
+  ],
+  "messages": [
+    "390003\tfailed\tCommand failed: yt-dlp -f bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4][height<=1080]/best --merge-output-format mp4 --no-playlist -o /tmp/squash-url-Sa6gQ5/video.mp4 https://youtu.be/WI5xTNXaljc",
+    "WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one",
+    "ERROR: [youtube] WI5xTNXaljc: Sign in to confirm you’re not a bot. Use --cookies-from-browser or --cookies for the authentication. See  https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp  for how to manually pass cookies. Also see  https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies  for tips on effectively exporting YouTube cookies",
+    "\t\t2026-03-19 01:32:55",
+    "390002\tfailed\tCommand failed: yt-dlp -f bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4][height<=1080]/best --merge-output-format mp4 --no-playlist -o /tmp/squash-url-NM8Cvk/video.mp4 https://youtu.be/WI5xTNXaljc",
+    "WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one",
+    "ERROR: [youtube] WI5xTNXaljc: Sign in to confirm you’re not a bot. Use --cookies-from-browser or --cookies for the authentication. See  https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp  for how to manually pass cookies. Also see  https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies  for tips on effectively exporting YouTube cookies",
+    "\t\t2026-03-19 01:29:53"
+  ],
+  "stdout": "id\tstatus\terrorMessage\tvideoUrl\tcreatedAt\n390006\tpending\tNULL\thttps://example.com/player-video.mp4\t2026-03-19 01:36:46\n390005\tpending\tNULL\thttps://example.com/new-video.mp4\t2026-03-19 01:36:46\n390004\tcomplete\tNULL\thttps://example.com/test-video.mp4\t2026-03-19 01:36:46\n390003\tfailed\tCommand failed: yt-dlp -f bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4][height<=1080]/best --merge-output-format mp4 --no-playlist -o /tmp/squash-url-Sa6gQ5/video.mp4 https://youtu.be/WI5xTNXaljc\nWARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one\nERROR: [youtube] WI5xTNXaljc: Sign in to confirm you’re not a bot. Use --cookies-from-browser or --cookies for the authentication. See  https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp  for how to manually pass cookies. Also see  https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies  for tips on effectively exporting YouTube cookies\n\t\t2026-03-19 01:32:55\n390002\tfailed\tCommand failed: yt-dlp -f bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4][height<=1080]/best --merge-output-format mp4 --no-playlist -o /tmp/squash-url-NM8Cvk/video.mp4 https://youtu.be/WI5xTNXaljc\nWARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one\nERROR: [youtube] WI5xTNXaljc: Sign in to confirm you’re not a bot. Use --cookies-from-browser or --cookies for the authentication. See  https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp  for how to manually pass cookies. Also see  https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies  for tips on effectively exporting YouTube cookies\n\t\t2026-03-19 01:29:53\n390001\tfailed\tFailed to analyze video\t\t2026-03-19 01:23:44\n360009\tcomplete\tNULL\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663348199059/ENhuhCf7SLWoUcgY9QEkFN/videos/1773862932867-ympbz.mp4\t2026-03-18 19:41:57\n360008\tcomplete\tNULL\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663348199059/ENhuhCf7SLWoUcgY9QEkFN/videos/1773860479282-9xr2er.mp4\t2026-03-18 19:01:03\n",
+  "stderr": "",
+  "execution_time_ms": 64
+}

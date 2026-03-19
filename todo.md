@@ -365,3 +365,9 @@
 - [x] Fix: pass Node.js path explicitly to yt-dlp via --js-runtimes flag
 - [x] Fix: detect YouTube bot-detection error and show clear user-facing message suggesting Google Drive instead
 - [x] Note: YouTube downloads from cloud IPs are blocked by YouTube (IP ban) - fundamental limitation, not a code bug
+
+## Bug Fix: YouTube Analysis Shows "Failed to analyze video"
+- [x] Diagnosed: analyzeSquashVideoPublic catch block swallowed real error with generic 'Failed to analyze video'
+- [x] Fixed: re-throw with original error message so callers surface the real reason to the user
+- [x] Confirmed: YouTube bot detection error now shows correctly in UI with YOUTUBE_BOT_DETECTION prefix stripped
+- [x] All 32 tests pass, 0 TypeScript errors
