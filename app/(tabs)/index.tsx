@@ -355,8 +355,8 @@ export default function HomeScreen() {
   // ── Video card ────────────────────────────────────────────────
   const renderVideoCard = ({ item }: { item: VideoAnalysis }) => (
     <Pressable
-      onPress={() => router.push(`/video/${item.id}` as any)}
-      style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1, flex: 1 })}
+      onPress={item.status === "failed" ? undefined : () => router.push(`/video/${item.id}` as any)}
+      style={({ pressed }) => ({ opacity: (pressed && item.status !== "failed") ? 0.7 : 1, flex: 1 })}
       className="mb-4"
     >
       <View
@@ -439,12 +439,12 @@ export default function HomeScreen() {
           </Text>
         ) : null}
         {item.status === "failed" ? (
-          <TouchableOpacity
-            onPress={(e) => { e.stopPropagation?.(); handleDeleteFailed(item.id, item.title); }}
-            style={{ alignSelf: "flex-end", marginTop: 10, paddingHorizontal: 14, paddingVertical: 6, backgroundColor: colors.error + "18", borderRadius: 8, borderWidth: 1, borderColor: colors.error + "44" }}
+          <Pressable
+            onPress={() => handleDeleteFailed(item.id, item.title)}
+            style={({ pressed }) => ({ alignSelf: "flex-end", marginTop: 10, paddingHorizontal: 14, paddingVertical: 6, backgroundColor: pressed ? colors.error + "33" : colors.error + "18", borderRadius: 8, borderWidth: 1, borderColor: colors.error + "44" })}
           >
             <Text style={{ fontSize: 13, fontWeight: "600", color: colors.error }}>🗑 Delete</Text>
-          </TouchableOpacity>
+          </Pressable>
         ) : null}
       </View>
     </Pressable>

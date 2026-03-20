@@ -12,6 +12,7 @@ import {
   Text,
   View,
   TouchableOpacity,
+  Pressable,
   Dimensions,
   ActivityIndicator,
   Alert,
@@ -475,9 +476,9 @@ export default function PlayerDetailScreen() {
                   return (
                     <TouchableOpacity
                       key={v.id}
-                      onPress={() => router.push(`/video/${v.id}` as any)}
+                      onPress={v.status === "failed" ? undefined : () => router.push(`/video/${v.id}` as any)}
                       style={{ backgroundColor: colors.surface, borderRadius: 14, borderWidth: 1, borderColor: colors.border, padding: 14, flexDirection: "row", alignItems: "center", gap: 12 }}
-                      activeOpacity={0.75}
+                      activeOpacity={v.status === "failed" ? 1 : 0.75}
                     >
                       {/* Grade or status indicator */}
                       <View style={{ width: 40, height: 40, borderRadius: 20, borderWidth: 2, borderColor: grade ? gradeColor(grade) : statusColor, alignItems: "center", justifyContent: "center", backgroundColor: (grade ? gradeColor(grade) : statusColor) + "18" }}>
@@ -500,12 +501,12 @@ export default function PlayerDetailScreen() {
                       </View>
                       {/* Score or delete button for failed */}
                       {v.status === "failed" ? (
-                        <TouchableOpacity
-                          onPress={(e) => { e.stopPropagation?.(); handleDeleteFailed(v.id, v.title); }}
-                          style={{ paddingHorizontal: 10, paddingVertical: 5, backgroundColor: "#EF444418", borderRadius: 7, borderWidth: 1, borderColor: "#EF444444" }}
+                        <Pressable
+                          onPress={() => handleDeleteFailed(v.id, v.title)}
+                          style={({ pressed }) => ({ paddingHorizontal: 10, paddingVertical: 5, backgroundColor: pressed ? "#EF444433" : "#EF444418", borderRadius: 7, borderWidth: 1, borderColor: "#EF444444" })}
                         >
                           <Text style={{ fontSize: 12, fontWeight: "600", color: "#EF4444" }}>🗑 Delete</Text>
-                        </TouchableOpacity>
+                        </Pressable>
                       ) : (
                         <>
                           {typeof score === "number" && (

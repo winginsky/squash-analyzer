@@ -391,3 +391,9 @@
 - [x] Added 🗑 Delete button on failed video cards in home screen with Alert confirmation
 - [x] Added 🗑 Delete button on failed session rows in player detail screen Sessions tab with Alert confirmation
 - [x] 32/33 tests pass, 0 TypeScript errors
+
+## Bug Fix: Delete Button Does Nothing
+- [x] Root cause: delete button was a nested Pressable/TouchableOpacity inside an outer Pressable; React Native swallows inner presses
+- [x] Fix home screen: outer Pressable onPress=undefined for failed items; inner delete uses Pressable (not TouchableOpacity)
+- [x] Fix player detail screen: outer TouchableOpacity onPress=undefined + activeOpacity=1 for failed rows; inner delete uses Pressable
+- [x] 32/33 tests pass, 0 TypeScript errors
