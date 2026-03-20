@@ -14,6 +14,7 @@ import {
   TouchableOpacity,
   Dimensions,
   ActivityIndicator,
+  Alert,
 } from "react-native";
 import { useLocalSearchParams, router } from "expo-router";
 import { trpc } from "@/lib/trpc";
@@ -81,7 +82,18 @@ export default function PlayerDetailScreen() {
   const playerName = rawName === "__none__" ? null : (rawName ? decodeURIComponent(rawName) : null);
   const [activeTab, setActiveTab] = useState<"overview" | "stats" | "sessions">("overview");
 
-  const { data: videosData, isLoading } = trpc.videos.list.useQuery();
+  const { data: videosData, isLoading, refetch } = trpc.videos.list.useQuery();
+  const deleteVideo = trpc.videos.delete.useMutation({ onSuccess: () => refetch() });
+  const handleDeleteFailed = (id: number, title: string) => {
+    Alert.alert(
+      "Delete Session",
+      `Delete "${title}"? This cannot be undone.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Delete", style: "destructive", onPress: () => deleteVideo.mutate({ id }) },
+      ]
+    );
+  };
 
   // Filter to this player's completed sessions
   const sessions: Session[] = useMemo(() => {
@@ -486,11 +498,22 @@ export default function PlayerDetailScreen() {
                           <Text style={{ fontSize: 11, color: colors.muted }} numberOfLines={1}>Top: {topSuggestion}</Text>
                         )}
                       </View>
-                      {/* Score */}
-                      {typeof score === "number" && (
-                        <Text style={{ fontSize: 20, fontWeight: "800", color: gradeColor(grade) }}>{score}</Text>
+                      {/* Score or delete button for failed */}
+                      {v.status === "failed" ? (
+                        <TouchableOpacity
+                          onPress={(e) => { e.stopPropagation?.(); handleDeleteFailed(v.id, v.title); }}
+                          style={{ paddingHorizontal: 10, paddingVertical: 5, backgroundColor: "#EF444418", borderRadius: 7, borderWidth: 1, borderColor: "#EF444444" }}
+                        >
+                          <Text style={{ fontSize: 12, fontWeight: "600", color: "#EF4444" }}>🗑 Delete</Text>
+                        </TouchableOpacity>
+                      ) : (
+                        <>
+                          {typeof score === "number" && (
+                            <Text style={{ fontSize: 20, fontWeight: "800", color: gradeColor(grade) }}>{score}</Text>
+                          )}
+                          <Text style={{ color: colors.muted, fontSize: 16 }}>›</Text>
+                        </>
                       )}
-                      <Text style={{ color: colors.muted, fontSize: 16 }}>›</Text>
                     </TouchableOpacity>
                   );
                 })}

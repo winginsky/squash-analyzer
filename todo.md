@@ -384,3 +384,10 @@
 - [x] Removed YouTube and Google Photos rows from the supported sources hint list
 - [x] Simplified detectUrlSource and getUrlSourceLabel to only handle Google Drive
 - [x] 0 TypeScript errors
+
+## Feature: Delete Failed Sessions
+- [x] deleteVideoAnalysis(id) already existed in db.ts
+- [x] videos.delete tRPC mutation already existed; changed to publicProcedure (TODO: restore before production)
+- [x] Added 🗑 Delete button on failed video cards in home screen with Alert confirmation
+- [x] Added 🗑 Delete button on failed session rows in player detail screen Sessions tab with Alert confirmation
+- [x] 32/33 tests pass, 0 TypeScript errors

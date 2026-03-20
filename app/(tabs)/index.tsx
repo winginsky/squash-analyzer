@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { Alert } from "react-native";
 import { trpc } from "@/lib/trpc";
 import { getApiBaseUrl } from "@/constants/oauth";
 import {
@@ -76,6 +77,23 @@ export default function HomeScreen() {
     undefined,
     { enabled: true } // TODO: restore to `enabled: isAuthenticated` before production
   );
+  const deleteVideo = trpc.videos.delete.useMutation({
+    onSuccess: () => refetch(),
+  });
+  const handleDeleteFailed = (id: string, title: string) => {
+    Alert.alert(
+      "Delete Session",
+      `Delete "${title}"? This cannot be undone.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => deleteVideo.mutate({ id: parseInt(id, 10) }),
+        },
+      ]
+    );
+  };
   const [refreshing, setRefreshing] = useState(false);
   // ── Poll while any video is analyzing; detect completion ──────────────────────
   useEffect(() => {
@@ -419,6 +437,14 @@ export default function HomeScreen() {
           <Text style={{ fontSize: 12, color: colors.error, marginTop: 4, lineHeight: 16 }} numberOfLines={3}>
             {item.errorMessage.replace(/^GOOGLE_DRIVE_PRIVATE:\s*/i, "").replace(/^GOOGLE_PHOTOS_UNSUPPORTED:\s*/i, "").replace(/^YOUTUBE_BOT_DETECTION:\s*/i, "")}
           </Text>
+        ) : null}
+        {item.status === "failed" ? (
+          <TouchableOpacity
+            onPress={(e) => { e.stopPropagation?.(); handleDeleteFailed(item.id, item.title); }}
+            style={{ alignSelf: "flex-end", marginTop: 10, paddingHorizontal: 14, paddingVertical: 6, backgroundColor: colors.error + "18", borderRadius: 8, borderWidth: 1, borderColor: colors.error + "44" }}
+          >
+            <Text style={{ fontSize: 13, fontWeight: "600", color: colors.error }}>🗑 Delete</Text>
+          </TouchableOpacity>
         ) : null}
       </View>
     </Pressable>
