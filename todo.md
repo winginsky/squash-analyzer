@@ -397,3 +397,9 @@
 - [x] Fix home screen: outer Pressable onPress=undefined for failed items; inner delete uses Pressable (not TouchableOpacity)
 - [x] Fix player detail screen: outer TouchableOpacity onPress=undefined + activeOpacity=1 for failed rows; inner delete uses Pressable
 - [x] 32/33 tests pass, 0 TypeScript errors
+
+## Bug Fix: Delete Button Still Not Working
+- [x] Root cause: even with onPress=undefined on outer Pressable, React Native still intercepts all touches within its bounds on iOS/Android
+- [x] Fix: restructured layout so delete button is a sibling View BELOW the card Pressable, completely outside its touch boundary
+- [x] Applied same fix to player detail screen Sessions tab
+- [x] 32/33 tests pass, 0 TypeScript errors

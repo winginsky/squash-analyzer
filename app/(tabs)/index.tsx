@@ -354,100 +354,109 @@ export default function HomeScreen() {
 
   // ── Video card ────────────────────────────────────────────────
   const renderVideoCard = ({ item }: { item: VideoAnalysis }) => (
-    <Pressable
-      onPress={item.status === "failed" ? undefined : () => router.push(`/video/${item.id}` as any)}
-      style={({ pressed }) => ({ opacity: (pressed && item.status !== "failed") ? 0.7 : 1, flex: 1 })}
-      className="mb-4"
-    >
-      <View
-        style={{
-          backgroundColor: colors.surface,
-          borderRadius: 16,
-          padding: 16,
-          borderWidth: 1,
-          borderColor: colors.border,
-        }}
+    <View style={{ marginBottom: 16 }}>
+      <Pressable
+        onPress={item.status === "failed" ? undefined : () => router.push(`/video/${item.id}` as any)}
+        style={({ pressed }) => ({ opacity: (pressed && item.status !== "failed") ? 0.7 : 1 })}
       >
         <View
           style={{
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "space-between",
-            marginBottom: 4,
+            backgroundColor: colors.surface,
+            borderRadius: 16,
+            padding: 16,
+            borderWidth: 1,
+            borderColor: item.status === "failed" ? colors.error + "66" : colors.border,
           }}
         >
-          <Text
-            style={{
-              fontSize: 16,
-              fontWeight: "600",
-              color: colors.foreground,
-              flex: 1,
-              marginRight: 8,
-            }}
-            numberOfLines={1}
-          >
-            {item.title}
-          </Text>
           <View
             style={{
-              paddingHorizontal: 10,
-              paddingVertical: 4,
-              borderRadius: 20,
-              backgroundColor:
-                item.status === "complete"
-                  ? colors.success + "33"
-                  : item.status === "failed"
-                  ? colors.error + "33"
-                  : item.status === "downloading"
-                  ? colors.primary + "33"
-                  : colors.warning + "33",
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+              marginBottom: 4,
             }}
           >
             <Text
               style={{
-                fontSize: 12,
-                fontWeight: "500",
-                color:
+                fontSize: 16,
+                fontWeight: "600",
+                color: colors.foreground,
+                flex: 1,
+                marginRight: 8,
+              }}
+              numberOfLines={1}
+            >
+              {item.title}
+            </Text>
+            <View
+              style={{
+                paddingHorizontal: 10,
+                paddingVertical: 4,
+                borderRadius: 20,
+                backgroundColor:
                   item.status === "complete"
-                    ? colors.success
+                    ? colors.success + "33"
                     : item.status === "failed"
-                    ? colors.error
+                    ? colors.error + "33"
                     : item.status === "downloading"
-                    ? colors.primary
-                    : colors.warning,
+                    ? colors.primary + "33"
+                    : colors.warning + "33",
               }}
             >
-              {item.status === "complete"
-                ? "Complete"
-                : item.status === "failed"
-                ? "Failed"
-                : item.status === "downloading"
-                ? "Downloading…"
-                : "Analyzing…"}
-            </Text>
+              <Text
+                style={{
+                  fontSize: 12,
+                  fontWeight: "500",
+                  color:
+                    item.status === "complete"
+                      ? colors.success
+                      : item.status === "failed"
+                      ? colors.error
+                      : item.status === "downloading"
+                      ? colors.primary
+                      : colors.warning,
+                }}
+              >
+                {item.status === "complete"
+                  ? "Complete"
+                  : item.status === "failed"
+                  ? "Failed"
+                  : item.status === "downloading"
+                  ? "Downloading…"
+                  : "Analyzing…"}
+              </Text>
+            </View>
           </View>
+          {item.playerName ? (
+            <Text style={{ fontSize: 13, color: colors.muted, marginBottom: 2 }}>
+              Player: {item.playerName}
+            </Text>
+          ) : null}
+          <Text style={{ fontSize: 13, color: colors.muted }}>{item.date}</Text>
+          {item.status === "failed" && item.errorMessage ? (
+            <Text style={{ fontSize: 12, color: colors.error, marginTop: 4, lineHeight: 16 }} numberOfLines={3}>
+              {item.errorMessage.replace(/^GOOGLE_DRIVE_PRIVATE:\s*/i, "").replace(/^GOOGLE_PHOTOS_UNSUPPORTED:\s*/i, "").replace(/^YOUTUBE_BOT_DETECTION:\s*/i, "")}
+            </Text>
+          ) : null}
         </View>
-        {item.playerName ? (
-          <Text style={{ fontSize: 13, color: colors.muted, marginBottom: 2 }}>
-            Player: {item.playerName}
-          </Text>
-        ) : null}
-        <Text style={{ fontSize: 13, color: colors.muted }}>{item.date}</Text>
-        {item.status === "failed" && item.errorMessage ? (
-          <Text style={{ fontSize: 12, color: colors.error, marginTop: 4, lineHeight: 16 }} numberOfLines={3}>
-            {item.errorMessage.replace(/^GOOGLE_DRIVE_PRIVATE:\s*/i, "").replace(/^GOOGLE_PHOTOS_UNSUPPORTED:\s*/i, "").replace(/^YOUTUBE_BOT_DETECTION:\s*/i, "")}
-          </Text>
-        ) : null}
-        {item.status === "failed" ? (
-          <Pressable
-            onPress={() => handleDeleteFailed(item.id, item.title)}
-            style={({ pressed }) => ({ alignSelf: "flex-end", marginTop: 10, paddingHorizontal: 14, paddingVertical: 6, backgroundColor: pressed ? colors.error + "33" : colors.error + "18", borderRadius: 8, borderWidth: 1, borderColor: colors.error + "44" })}
-          >
-            <Text style={{ fontSize: 13, fontWeight: "600", color: colors.error }}>🗑 Delete</Text>
-          </Pressable>
-        ) : null}
-      </View>
-    </Pressable>
+      </Pressable>
+      {item.status === "failed" ? (
+        <Pressable
+          onPress={() => handleDeleteFailed(item.id, item.title)}
+          style={({ pressed }) => ({
+            marginTop: 6,
+            paddingVertical: 10,
+            borderRadius: 10,
+            backgroundColor: pressed ? colors.error + "44" : colors.error + "18",
+            borderWidth: 1,
+            borderColor: colors.error + "66",
+            alignItems: "center",
+          })}
+        >
+          <Text style={{ fontSize: 14, fontWeight: "600", color: colors.error }}>🗑 Delete Session</Text>
+        </Pressable>
+      ) : null}
+    </View>
   );
 
   // ── Auth loading state ────────────────────────────────────────

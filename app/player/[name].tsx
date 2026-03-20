@@ -474,48 +474,58 @@ export default function PlayerDetailScreen() {
                   const topSuggestion = r?.suggestions?.[0]?.title;
                   const statusColor = v.status === "complete" ? "#22C55E" : v.status === "failed" ? "#EF4444" : v.status === "downloading" ? "#0a7ea4" : "#F59E0B";
                   return (
-                    <TouchableOpacity
-                      key={v.id}
-                      onPress={v.status === "failed" ? undefined : () => router.push(`/video/${v.id}` as any)}
-                      style={{ backgroundColor: colors.surface, borderRadius: 14, borderWidth: 1, borderColor: colors.border, padding: 14, flexDirection: "row", alignItems: "center", gap: 12 }}
-                      activeOpacity={v.status === "failed" ? 1 : 0.75}
-                    >
-                      {/* Grade or status indicator */}
-                      <View style={{ width: 40, height: 40, borderRadius: 20, borderWidth: 2, borderColor: grade ? gradeColor(grade) : statusColor, alignItems: "center", justifyContent: "center", backgroundColor: (grade ? gradeColor(grade) : statusColor) + "18" }}>
-                        {grade ? (
-                          <Text style={{ fontSize: 14, fontWeight: "800", color: gradeColor(grade) }}>{grade}</Text>
-                        ) : (
-                          <Text style={{ fontSize: 9, fontWeight: "700", color: statusColor, textTransform: "uppercase" }}>{v.status === "downloading" ? "↓" : v.status === "analyzing" ? "…" : v.status === "failed" ? "✗" : "?"}</Text>
+                    <View key={v.id}>
+                      <TouchableOpacity
+                        onPress={v.status === "failed" ? undefined : () => router.push(`/video/${v.id}` as any)}
+                        style={{ backgroundColor: colors.surface, borderRadius: 14, borderWidth: 1, borderColor: v.status === "failed" ? "#EF444466" : colors.border, padding: 14, flexDirection: "row", alignItems: "center", gap: 12 }}
+                        activeOpacity={v.status === "failed" ? 1 : 0.75}
+                      >
+                        {/* Grade or status indicator */}
+                        <View style={{ width: 40, height: 40, borderRadius: 20, borderWidth: 2, borderColor: grade ? gradeColor(grade) : statusColor, alignItems: "center", justifyContent: "center", backgroundColor: (grade ? gradeColor(grade) : statusColor) + "18" }}>
+                          {grade ? (
+                            <Text style={{ fontSize: 14, fontWeight: "800", color: gradeColor(grade) }}>{grade}</Text>
+                          ) : (
+                            <Text style={{ fontSize: 9, fontWeight: "700", color: statusColor, textTransform: "uppercase" }}>{v.status === "downloading" ? "↓" : v.status === "analyzing" ? "…" : v.status === "failed" ? "✗" : "?"}</Text>
+                          )}
+                        </View>
+                        {/* Info */}
+                        <View style={{ flex: 1, gap: 2 }}>
+                          <Text style={{ fontSize: 14, fontWeight: "600", color: colors.foreground }} numberOfLines={1}>{v.title}</Text>
+                          <Text style={{ fontSize: 11, color: colors.muted }}>
+                            {new Date(v.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+                            {v.status === "downloading" ? " · Downloading…" : v.status === "analyzing" ? " · Analysing…" : v.status === "failed" ? " · Failed" : ""}
+                          </Text>
+                          {topSuggestion && (
+                            <Text style={{ fontSize: 11, color: colors.muted }} numberOfLines={1}>Top: {topSuggestion}</Text>
+                          )}
+                        </View>
+                        {/* Score chevron for non-failed */}
+                        {v.status !== "failed" && (
+                          <>
+                            {typeof score === "number" && (
+                              <Text style={{ fontSize: 20, fontWeight: "800", color: gradeColor(grade) }}>{score}</Text>
+                            )}
+                            <Text style={{ color: colors.muted, fontSize: 16 }}>›</Text>
+                          </>
                         )}
-                      </View>
-                      {/* Info */}
-                      <View style={{ flex: 1, gap: 2 }}>
-                        <Text style={{ fontSize: 14, fontWeight: "600", color: colors.foreground }} numberOfLines={1}>{v.title}</Text>
-                        <Text style={{ fontSize: 11, color: colors.muted }}>
-                          {new Date(v.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
-                          {v.status === "downloading" ? " · Downloading…" : v.status === "analyzing" ? " · Analysing…" : v.status === "failed" ? " · Failed" : ""}
-                        </Text>
-                        {topSuggestion && (
-                          <Text style={{ fontSize: 11, color: colors.muted }} numberOfLines={1}>Top: {topSuggestion}</Text>
-                        )}
-                      </View>
-                      {/* Score or delete button for failed */}
-                      {v.status === "failed" ? (
+                      </TouchableOpacity>
+                      {v.status === "failed" && (
                         <Pressable
                           onPress={() => handleDeleteFailed(v.id, v.title)}
-                          style={({ pressed }) => ({ paddingHorizontal: 10, paddingVertical: 5, backgroundColor: pressed ? "#EF444433" : "#EF444418", borderRadius: 7, borderWidth: 1, borderColor: "#EF444444" })}
+                          style={({ pressed }) => ({
+                            marginTop: 4,
+                            paddingVertical: 9,
+                            borderRadius: 9,
+                            backgroundColor: pressed ? "#EF444433" : "#EF444418",
+                            borderWidth: 1,
+                            borderColor: "#EF444466",
+                            alignItems: "center",
+                          })}
                         >
-                          <Text style={{ fontSize: 12, fontWeight: "600", color: "#EF4444" }}>🗑 Delete</Text>
+                          <Text style={{ fontSize: 13, fontWeight: "600", color: "#EF4444" }}>🗑 Delete Session</Text>
                         </Pressable>
-                      ) : (
-                        <>
-                          {typeof score === "number" && (
-                            <Text style={{ fontSize: 20, fontWeight: "800", color: gradeColor(grade) }}>{score}</Text>
-                          )}
-                          <Text style={{ color: colors.muted, fontSize: 16 }}>›</Text>
-                        </>
                       )}
-                    </TouchableOpacity>
+                    </View>
                   );
                 })}
               </View>
