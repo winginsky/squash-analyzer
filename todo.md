@@ -377,3 +377,10 @@
 - [x] Fix: check stderr for bot-detection keywords AFTER execFileAsync succeeds (not just in catch block)
 - [x] Fix: if file missing despite exit code 0, extract real reason from stderr ERROR: line
 - [x] Verified: record 420010 shows correct YOUTUBE_BOT_DETECTION error, no more ffprobe crash
+
+## UI: Remove YouTube/Google Photos from URL Input
+- [x] Updated URL input placeholder to 'Paste Google Drive link…'
+- [x] Updated validation error to only mention Google Drive
+- [x] Removed YouTube and Google Photos rows from the supported sources hint list
+- [x] Simplified detectUrlSource and getUrlSourceLabel to only handle Google Drive
+- [x] 0 TypeScript errors

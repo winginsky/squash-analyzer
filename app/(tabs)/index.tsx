@@ -204,36 +204,20 @@ export default function HomeScreen() {
     try {
       const u = new URL(url);
       const host = u.hostname.replace(/^www\./, "");
-      if (host === "youtube.com" || host === "youtu.be" || host === "m.youtube.com") return "youtube";
       if (host === "drive.google.com") return "google_drive";
-      if (host === "photos.google.com" || host === "lh3.googleusercontent.com" || host === "photos.app.goo.gl" || host === "goo.gl") return "google_photos";
     } catch { /* invalid URL */ }
     return null;
   };
-  const isGooglePhotosShareLink = (url: string) => {
-    try {
-      const host = new URL(url).hostname.replace(/^www\./, "");
-      return host === "photos.google.com" || host === "photos.app.goo.gl" || host === "goo.gl";
-    } catch { return false; }
-  };
   const getUrlSourceLabel = (url: string) => {
     const src = detectUrlSource(url);
-    if (src === "youtube") return { icon: "▶", label: "YouTube", color: "#FF0000", warning: null };
     if (src === "google_drive") return { icon: "📁", label: "Google Drive", color: "#4285F4", warning: null };
-    if (src === "google_photos") {
-      if (isGooglePhotosShareLink(url)) {
-        return { icon: "⚠️", label: "Google Photos (not supported)", color: "#F59E0B",
-          warning: "Google Photos share links cannot be downloaded. Upload the file directly or use a Google Drive link instead." };
-      }
-      return { icon: "🖼", label: "Google Photos", color: "#34A853", warning: null };
-    }
     return null;
   };
   const handleUploadUrl = async () => {
     const trimmedUrl = videoUrl.trim();
     if (!trimmedUrl || !title) return;
     const source = detectUrlSource(trimmedUrl);
-    if (!source) { setUrlError("Please enter a YouTube, Google Drive, or Google Photos link."); return; }
+    if (!source) { setUrlError("Please enter a Google Drive link (drive.google.com/file/d/…/view)."); return; }
     setUrlError("");
     setUploading(true);
     const srcLabel = source === "youtube" ? "YouTube" : source === "google_drive" ? "Google Drive" : "Google Photos";
@@ -630,7 +614,7 @@ export default function HomeScreen() {
                   <TextInput
                     value={videoUrl}
                     onChangeText={(t) => { setVideoUrl(t); setUrlError(""); }}
-                    placeholder="Paste YouTube, Google Drive, or Google Photos link…"
+                    placeholder="Paste Google Drive link…"
                     placeholderTextColor={colors.muted}
                     autoCapitalize="none"
                     autoCorrect={false}
@@ -667,9 +651,7 @@ export default function HomeScreen() {
                 {!videoUrl && (
                   <View style={{ marginTop: 10, gap: 6 }}>
                     {[
-                      { icon: "▶", label: "YouTube", hint: "Any public or unlisted video", color: "#FF0000" },
-                      { icon: "📁", label: "Google Drive", hint: 'Share link with "Anyone with the link"', color: "#4285F4" },
-                      { icon: "🖼", label: "Google Photos", hint: "Direct lh3.googleusercontent.com links only", color: "#34A853" },
+                      { icon: "📁", label: "Google Drive", hint: 'Share link with "Anyone with the link can view"', color: "#4285F4" },
                     ].map((s) => (
                       <View key={s.label} style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                         <View style={{ width: 28, height: 28, borderRadius: 8, backgroundColor: s.color + "15", alignItems: "center", justifyContent: "center" }}>
