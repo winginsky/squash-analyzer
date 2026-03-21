@@ -403,3 +403,7 @@
 - [x] Fix: restructured layout so delete button is a sibling View BELOW the card Pressable, completely outside its touch boundary
 - [x] Applied same fix to player detail screen Sessions tab
 - [x] 32/33 tests pass, 0 TypeScript errors
+
+## Bug Fix: Delete Button in Player Detail Screen Still Not Working
+- [ ] Diagnose why delete button in player detail screen (Jeffrey) still doesn't fire
+- [ ] Fix root cause
