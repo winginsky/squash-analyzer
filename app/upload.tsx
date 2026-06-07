@@ -1,5 +1,4 @@
 import { useState, useRef } from "react";
-import { trpc } from "@/lib/trpc";
 import {
   Text,
   View,
@@ -16,11 +15,17 @@ import { VideoView, useVideoPlayer } from "expo-video";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { useColors } from "@/hooks/use-colors";
+import { getApiBaseUrl } from "@/constants/oauth";
+
+type InputMode = "file" | "url";
 
 export default function UploadScreen() {
   const colors = useColors();
+  const [inputMode, setInputMode] = useState<InputMode>("file");
   const [videoUri, setVideoUri] = useState<string | null>(null);
   const [videoFileName, setVideoFileName] = useState<string>("");
+  const [webFile, setWebFile] = useState<File | null>(null);
+  const [videoUrl, setVideoUrl] = useState("");
   const [title, setTitle] = useState("");
   const [playerName, setPlayerName] = useState("");
   const [playerDescription, setPlayerDescription] = useState("");
@@ -36,26 +41,24 @@ export default function UploadScreen() {
     }
   );
 
-  // Web: trigger hidden <input type="file"> click
   const pickVideoWeb = () => {
     if (webFileInputRef.current) {
       webFileInputRef.current.click();
     }
   };
 
-  // Web: handle file selected from <input>
   const handleWebFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const objectUrl = URL.createObjectURL(file);
     setVideoUri(objectUrl);
     setVideoFileName(file.name);
+    setWebFile(file);
     if (!title) {
       setTitle(`Squash Game ${new Date().toLocaleDateString()}`);
     }
   };
 
-  // Native: use expo-image-picker
   const pickVideoNative = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -74,60 +77,65 @@ export default function UploadScreen() {
 
   const pickVideo = Platform.OS === "web" ? pickVideoWeb : pickVideoNative;
 
-  const uploadMutation = trpc.videos.upload.useMutation();
-
   const handleUpload = async () => {
-    if (!videoUri || !title) return;
+    if (!title) return;
+    if (inputMode === "file" && !videoUri) return;
+    if (inputMode === "url" && !videoUrl.trim()) return;
 
     if (Platform.OS !== "web") {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
 
     setUploading(true);
-    setUploadProgress("Reading video file…");
 
     try {
-      let base64: string;
-      let mimeType = "video/mp4";
+      const apiBase = getApiBaseUrl();
 
-      if (Platform.OS === "web") {
-        // On web, fetch the object URL to get a blob, then convert to base64
-        const response = await fetch(videoUri);
-        const blob = await response.blob();
-        mimeType = blob.type || "video/mp4";
-        setUploadProgress("Encoding video…");
-        base64 = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onloadend = () => {
-            const result = reader.result as string;
-            resolve(result.split(",")[1]);
-          };
-          reader.onerror = reject;
-          reader.readAsDataURL(blob);
+      if (inputMode === "url") {
+        setUploadProgress("Submitting link…");
+        const res = await fetch(`${apiBase}/api/upload-video-url`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            url: videoUrl.trim(),
+            title,
+            playerName: playerName || undefined,
+            playerDescription: playerDescription || undefined,
+          }),
         });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({})) as { error?: string };
+          throw new Error(err.error || "Failed to submit link");
+        }
       } else {
-        // On native, use fetch on the local file URI
-        const response = await fetch(videoUri);
-        const blob = await response.blob();
-        base64 = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onloadend = () => {
-            const result = reader.result as string;
-            resolve(result.split(",")[1]);
-          };
-          reader.onerror = reject;
-          reader.readAsDataURL(blob);
-        });
-      }
+        setUploadProgress("Uploading video…");
+        const formData = new FormData();
 
-      setUploadProgress("Uploading to server…");
-      await uploadMutation.mutateAsync({
-        title,
-        playerName: playerName || undefined,
-        playerDescription: playerDescription || undefined,
-        videoBase64: base64,
-        mimeType,
-      });
+        if (Platform.OS === "web") {
+          // Use the File reference directly — no base64 encoding needed
+          const file = webFile ?? await fetch(videoUri!).then(r => r.blob());
+          formData.append("video", file, videoFileName || "video.mp4");
+        } else {
+          // On native, stream the local file URI as a blob
+          const blob = await fetch(videoUri!).then(r => r.blob());
+          formData.append("video", blob, "video.mp4");
+        }
+
+        formData.append("title", title);
+        if (playerName) formData.append("playerName", playerName);
+        if (playerDescription) formData.append("playerDescription", playerDescription);
+
+        const res = await fetch(`${apiBase}/api/upload-video`, {
+          method: "POST",
+          body: formData,
+          credentials: "include",
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({})) as { error?: string };
+          throw new Error(err.error || "Upload failed");
+        }
+      }
 
       if (Platform.OS !== "web") {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -144,6 +152,11 @@ export default function UploadScreen() {
       setUploading(false);
     }
   };
+
+  const canSubmit =
+    !!title &&
+    !uploading &&
+    (inputMode === "file" ? !!videoUri : !!videoUrl.trim());
 
   return (
     <ScreenContainer edges={["top", "left", "right", "bottom"]}>
@@ -192,115 +205,192 @@ export default function UploadScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Video Preview / Picker */}
-          {videoUri ? (
-            <View className="mb-6">
-              {Platform.OS === "web" ? (
-                <View
-                  style={{ width: "100%", borderRadius: 16, overflow: "hidden" }}
+          {/* Mode toggle */}
+          <View
+            style={{
+              flexDirection: "row",
+              backgroundColor: colors.surface,
+              borderRadius: 12,
+              borderWidth: 1,
+              borderColor: colors.border,
+              marginBottom: 20,
+              padding: 4,
+            }}
+          >
+            {(["file", "url"] as InputMode[]).map((mode) => (
+              <TouchableOpacity
+                key={mode}
+                onPress={() => setInputMode(mode)}
+                style={{
+                  flex: 1,
+                  paddingVertical: 8,
+                  borderRadius: 8,
+                  alignItems: "center",
+                  backgroundColor:
+                    inputMode === mode ? colors.primary : "transparent",
+                }}
+              >
+                <Text
+                  style={{
+                    fontSize: 14,
+                    fontWeight: "600",
+                    color:
+                      inputMode === mode ? colors.background : colors.muted,
+                  }}
                 >
-                  {/* @ts-ignore */}
-                  <video
-                    src={videoUri}
-                    controls
-                    style={{
-                      width: "100%",
-                      aspectRatio: "16 / 9",
-                      maxHeight: 400,
-                      display: "block",
-                      backgroundColor: colors.surface,
-                    }}
-                  />
+                  {mode === "file" ? "Upload File" : "Paste Link"}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {inputMode === "file" ? (
+            <>
+              {/* Video Preview / Picker */}
+              {videoUri ? (
+                <View className="mb-6">
+                  {Platform.OS === "web" ? (
+                    <View
+                      style={{ width: "100%", borderRadius: 16, overflow: "hidden" }}
+                    >
+                      {/* @ts-ignore */}
+                      <video
+                        src={videoUri}
+                        controls
+                        style={{
+                          width: "100%",
+                          aspectRatio: "16 / 9",
+                          maxHeight: 400,
+                          display: "block",
+                          backgroundColor: colors.surface,
+                        }}
+                      />
+                    </View>
+                  ) : (
+                    <VideoView
+                      player={player}
+                      style={{
+                        width: "100%",
+                        aspectRatio: 16 / 9,
+                        borderRadius: 16,
+                        backgroundColor: colors.surface,
+                      }}
+                      allowsFullscreen
+                      nativeControls
+                    />
+                  )}
+                  {videoFileName ? (
+                    <Text className="text-xs text-muted mt-2 text-center">
+                      {videoFileName}
+                    </Text>
+                  ) : null}
                 </View>
               ) : (
-                <VideoView
-                  player={player}
+                <TouchableOpacity
+                  onPress={pickVideo}
                   style={{
                     width: "100%",
                     aspectRatio: 16 / 9,
-                    borderRadius: 16,
                     backgroundColor: colors.surface,
-                  }}
-                  allowsFullscreen
-                  nativeControls
-                />
-              )}
-              {videoFileName ? (
-                <Text className="text-xs text-muted mt-2 text-center">
-                  {videoFileName}
-                </Text>
-              ) : null}
-            </View>
-          ) : (
-            <TouchableOpacity
-              onPress={pickVideo}
-              style={{
-                width: "100%",
-                aspectRatio: 16 / 9,
-                backgroundColor: colors.surface,
-                borderWidth: 2,
-                borderStyle: "dashed",
-                borderColor: colors.border,
-                borderRadius: 16,
-                alignItems: "center",
-                justifyContent: "center",
-                marginBottom: 24,
-              }}
-            >
-              <View className="items-center">
-                <View
-                  style={{
-                    width: 64,
-                    height: 64,
-                    borderRadius: 32,
-                    backgroundColor: colors.primary + "1A",
+                    borderWidth: 2,
+                    borderStyle: "dashed",
+                    borderColor: colors.border,
+                    borderRadius: 16,
                     alignItems: "center",
                     justifyContent: "center",
-                    marginBottom: 12,
+                    marginBottom: 24,
                   }}
                 >
-                  <Text style={{ color: colors.primary, fontSize: 32 }}>▶</Text>
-                </View>
-                <Text
-                  style={{
-                    fontSize: 18,
-                    fontWeight: "600",
-                    color: colors.foreground,
-                    marginBottom: 4,
-                  }}
-                >
-                  {Platform.OS === "web"
-                    ? "Click to Select Video"
-                    : "Select Video"}
-                </Text>
-                <Text style={{ fontSize: 13, color: colors.muted }}>
-                  {Platform.OS === "web"
-                    ? "MP4, MOV, WebM supported"
-                    : "Choose a squash game video from your library"}
-                </Text>
-              </View>
-            </TouchableOpacity>
-          )}
+                  <View className="items-center">
+                    <View
+                      style={{
+                        width: 64,
+                        height: 64,
+                        borderRadius: 32,
+                        backgroundColor: colors.primary + "1A",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        marginBottom: 12,
+                      }}
+                    >
+                      <Text style={{ color: colors.primary, fontSize: 32 }}>▶</Text>
+                    </View>
+                    <Text
+                      style={{
+                        fontSize: 18,
+                        fontWeight: "600",
+                        color: colors.foreground,
+                        marginBottom: 4,
+                      }}
+                    >
+                      {Platform.OS === "web"
+                        ? "Click to Select Video"
+                        : "Select Video"}
+                    </Text>
+                    <Text style={{ fontSize: 13, color: colors.muted }}>
+                      {Platform.OS === "web"
+                        ? "MP4, MOV, WebM supported"
+                        : "Choose a squash game video from your library"}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              )}
 
-          {/* Change video button when one is selected */}
-          {videoUri && (
-            <TouchableOpacity
-              onPress={pickVideo}
-              style={{
-                alignSelf: "center",
-                marginBottom: 20,
-                paddingHorizontal: 16,
-                paddingVertical: 8,
-                borderRadius: 20,
-                borderWidth: 1,
-                borderColor: colors.border,
-                backgroundColor: colors.surface,
-              }}
-            >
-              <Text style={{ color: colors.foreground, fontSize: 14 }}>
-                Change Video
+              {videoUri && (
+                <TouchableOpacity
+                  onPress={pickVideo}
+                  style={{
+                    alignSelf: "center",
+                    marginBottom: 20,
+                    paddingHorizontal: 16,
+                    paddingVertical: 8,
+                    borderRadius: 20,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                    backgroundColor: colors.surface,
+                  }}
+                >
+                  <Text style={{ color: colors.foreground, fontSize: 14 }}>
+                    Change Video
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </>
+          ) : (
+            /* URL input */
+            <View className="mb-6">
+              <Text
+                style={{
+                  fontSize: 14,
+                  fontWeight: "500",
+                  color: colors.foreground,
+                  marginBottom: 8,
+                }}
+              >
+                Video Link
               </Text>
-            </TouchableOpacity>
+              <TextInput
+                value={videoUrl}
+                onChangeText={setVideoUrl}
+                placeholder="Paste a YouTube or Google Drive link"
+                placeholderTextColor={colors.muted}
+                autoCapitalize="none"
+                autoCorrect={false}
+                style={{
+                  backgroundColor: colors.surface,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  borderRadius: 12,
+                  paddingHorizontal: 16,
+                  paddingVertical: 12,
+                  fontSize: 15,
+                  color: colors.foreground,
+                }}
+              />
+              <Text style={{ fontSize: 12, color: colors.muted, marginTop: 6 }}>
+                Google Drive: make sure the file is shared as "Anyone with the link can view"
+              </Text>
+            </View>
           )}
 
           {/* Title Input */}
@@ -418,12 +508,9 @@ export default function UploadScreen() {
           {/* Analyze Button */}
           <TouchableOpacity
             onPress={handleUpload}
-            disabled={!videoUri || !title || uploading}
+            disabled={!canSubmit}
             style={{
-              backgroundColor:
-                !videoUri || !title || uploading
-                  ? colors.muted + "50"
-                  : colors.primary,
+              backgroundColor: !canSubmit ? colors.muted + "50" : colors.primary,
               borderRadius: 50,
               paddingVertical: 16,
               alignItems: "center",
@@ -437,8 +524,7 @@ export default function UploadScreen() {
                 style={{
                   fontWeight: "600",
                   fontSize: 16,
-                  color:
-                    !videoUri || !title ? colors.muted : colors.background,
+                  color: !canSubmit ? colors.muted : colors.background,
                 }}
               >
                 Analyze Video
@@ -446,7 +532,7 @@ export default function UploadScreen() {
             )}
           </TouchableOpacity>
 
-          {(!videoUri || !title) && !uploading && (
+          {!canSubmit && !uploading && (
             <Text
               style={{
                 textAlign: "center",
@@ -455,9 +541,11 @@ export default function UploadScreen() {
                 marginBottom: 8,
               }}
             >
-              {!videoUri
+              {!title
+                ? "Enter a title to continue"
+                : inputMode === "file"
                 ? "Select a video to continue"
-                : "Enter a title to continue"}
+                : "Paste a video link to continue"}
             </Text>
           )}
         </View>

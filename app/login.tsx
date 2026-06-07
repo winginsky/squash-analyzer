@@ -1,4 +1,5 @@
 import { View, Text, Pressable, ActivityIndicator, Image } from "react-native";
+import { SquashBall } from "@/components/squash-ball";
 import { ScreenContainer } from "@/components/screen-container";
 import { useColors } from "@/hooks/use-colors";
 import { startOAuthLogin } from "@/constants/oauth";
@@ -38,7 +39,7 @@ export default function LoginScreen() {
           elevation: 8,
         }}
       >
-        <Text style={{ fontSize: 48 }}>🎾</Text>
+        <SquashBall size={64} />
       </View>
 
       {/* Title */}

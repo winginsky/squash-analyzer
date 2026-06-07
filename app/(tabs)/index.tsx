@@ -18,6 +18,7 @@ import {
 import { router } from "expo-router";
 
 import { ScreenContainer } from "@/components/screen-container";
+import { SquashBall } from "@/components/squash-ball";
 import { useColors } from "@/hooks/use-colors";
 import { useAuthContext } from "@/lib/auth-provider";
 import Svg, { Polyline } from "react-native-svg";
@@ -915,16 +916,19 @@ export default function HomeScreen() {
               {uploading ? (
                 <ActivityIndicator color={colors.background} />
               ) : (
-                <Text
-                  style={{
-                    fontWeight: "600",
-                    fontSize: 16,
-                    color:
-                      (inputMode === "file" ? !videoUri : !videoUrl.trim()) || !title ? colors.muted : colors.background,
-                  }}
-                >
-                  🎾 Analyze Video
-                </Text>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  <SquashBall size={18} />
+                  <Text
+                    style={{
+                      fontWeight: "600",
+                      fontSize: 16,
+                      color:
+                        (inputMode === "file" ? !videoUri : !videoUrl.trim()) || !title ? colors.muted : colors.background,
+                    }}
+                  >
+                    Analyze Video
+                  </Text>
+                </View>
               )}
             </TouchableOpacity>
 
@@ -953,7 +957,9 @@ export default function HomeScreen() {
             <ActivityIndicator color={colors.primary} style={{ marginTop: 24 }} />
           ) : playerGroups.length === 0 ? (
             <View style={{ alignItems: "center", paddingVertical: 40, backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: colors.border }}>
-              <Text style={{ fontSize: 32, marginBottom: 8 }}>🎾</Text>
+              <View style={{ marginBottom: 8 }}>
+                <SquashBall size={40} />
+              </View>
               <Text style={{ fontSize: 16, fontWeight: "600", color: colors.foreground, marginBottom: 4 }}>No analyses yet</Text>
               <Text style={{ fontSize: 14, color: colors.muted }}>Upload your first video above to get started</Text>
             </View>
