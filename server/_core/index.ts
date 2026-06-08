@@ -1,5 +1,6 @@
 import "dotenv/config";
 import express from "express";
+import cookieParser from "cookie-parser";
 import { createServer } from "http";
 import net from "net";
 import multer from "multer";
@@ -7,13 +8,20 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
-import { registerOAuthRoutes } from "./oauth";
 import { appRouter, analyzeSquashVideoPublic } from "../routers";
 import { createContext } from "./context";
-import { storagePut, storagePutFile } from "../storage";
-import { sdk } from "./sdk";
+import { storagePut, storagePutFile, storagePresignPut } from "../storage";
 import * as db from "../db";
 import { downloadVideoFromUrl, validateVideoUrl, detectVideoSource } from "../videoUrl";
+import {
+  handleRegister,
+  handleLogin,
+  handleGoogleLogin,
+  handleGoogleCallback,
+  handleLogout,
+  handleMe,
+  authenticateRequest,
+} from "./auth";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise((resolve) => {
@@ -61,12 +69,130 @@ async function startServer() {
 
   app.use(express.json({ limit: "200mb" }));
   app.use(express.urlencoded({ limit: "200mb", extended: true }));
+  app.use(cookieParser());
 
-  registerOAuthRoutes(app);
+  // ── Auth routes ──────────────────────────────────────────────────────────
+  app.post("/api/auth/register", handleRegister);
+  app.post("/api/auth/login", handleLogin);
+  app.post("/api/auth/logout", handleLogout);
+  app.get("/api/auth/me", handleMe);
+  app.get("/api/auth/google", handleGoogleLogin);
+  app.get("/api/auth/google/callback", handleGoogleCallback);
 
   app.get("/api/health", (_req, res) => {
     res.json({ ok: true, timestamp: Date.now() });
   });
+
+  // ── Google Doc fetch proxy ────────────────────────────────────────────────
+  // Fetches the plain-text content of a Google Doc by its share URL so the
+  // browser doesn't have to deal with CORS issues when requesting google.com.
+  app.get(
+    "/api/fetch-gdoc",
+    async (req: express.Request, res: express.Response) => {
+      try {
+        const docUrl = req.query.url as string;
+        if (!docUrl) { res.status(400).json({ error: "url is required" }); return; }
+
+        // Extract the document ID from the share URL
+        const idMatch = docUrl.match(/\/d\/([a-zA-Z0-9_-]+)/);
+        if (!idMatch) { res.status(400).json({ error: "Could not parse Google Doc ID from URL" }); return; }
+        const docId = idMatch[1];
+
+        const exportUrl = `https://docs.google.com/document/d/${docId}/export?format=txt`;
+        const response = await fetch(exportUrl, { headers: { "User-Agent": "Mozilla/5.0" } });
+        if (!response.ok) {
+          res.status(502).json({ error: `Google Docs returned ${response.status}` });
+          return;
+        }
+        const text = await response.text();
+        res.json({ content: text.trim() });
+      } catch (err) {
+        console.error("[fetch-gdoc] error:", err);
+        res.status(500).json({ error: "Failed to fetch Google Doc", detail: String(err) });
+      }
+    },
+  );
+
+  // ── Presigned S3 upload endpoints ────────────────────────────────────────
+  // Step 1: Client requests a presigned PUT URL so it can upload directly to S3
+  // without the video passing through the API server (avoids nginx body size limits).
+  app.get(
+    "/api/presign-upload",
+    async (req: express.Request, res: express.Response) => {
+      try {
+        const mimeType = (req.query.mimeType as string) || "video/mp4";
+        const ext = (mimeType.split("/")[1] || "mp4").replace("quicktime", "mov");
+        const fileKey = `videos/${Date.now()}-${Math.random().toString(36).substring(7)}.${ext}`;
+        const { uploadUrl, publicUrl, key } = await storagePresignPut(fileKey, mimeType, 3600);
+        res.json({ uploadUrl, publicUrl, key });
+      } catch (err) {
+        console.error("[presign-upload] error:", err);
+        res.status(500).json({ error: "Failed to generate upload URL", detail: String(err) });
+      }
+    },
+  );
+
+  // Step 2: After the browser has PUT the file directly to S3, register it in the DB
+  // and kick off analysis. No file data flows through the API server.
+  app.post(
+    "/api/register-upload",
+    async (req: express.Request, res: express.Response) => {
+      try {
+        const { s3Key, s3Url, title, playerName, playerDescription, meetingNotes } = req.body as {
+          s3Key?: string;
+          s3Url?: string;
+          title?: string;
+          playerName?: string;
+          playerDescription?: string;
+          meetingNotes?: string;
+        };
+
+        if (!s3Key || !s3Url) {
+          res.status(400).json({ error: "s3Key and s3Url are required" });
+          return;
+        }
+        if (!title) {
+          res.status(400).json({ error: "title is required" });
+          return;
+        }
+
+        // Authenticate the uploader so the video is scoped to their account
+        let uploadUserId: number | undefined;
+        try {
+          const authUser = await authenticateRequest(req);
+          uploadUserId = authUser?.id ?? undefined;
+        } catch {
+          console.warn("[register-upload] No authenticated user — video will be unowned");
+        }
+
+        const videoId = await db.createVideoAnalysis({
+          title,
+          playerName: playerName || undefined,
+          playerDescription: playerDescription || undefined,
+          videoUrl: s3Url,
+          userId: uploadUserId,
+          status: "pending",
+          meetingNotes: meetingNotes?.trim() || undefined,
+        });
+
+        res.json({ id: videoId, videoUrl: s3Url });
+
+        // Run analysis asynchronously — pass meeting notes to AI if provided
+        analyzeSquashVideoPublic(s3Url, playerName, playerDescription, null, meetingNotes?.trim() || null)
+          .then(async (results) => {
+            await db.updateVideoAnalysis(videoId, { status: "complete", analysisResults: results });
+          })
+          .catch(async (error: Error) => {
+            await db.updateVideoAnalysis(videoId, { status: "failed", errorMessage: error.message });
+          });
+      } catch (err) {
+        console.error("[register-upload] error:", err);
+        if (!res.headersSent) {
+          res.status(500).json({ error: "Failed to register upload", detail: String(err) });
+        }
+      }
+    },
+  );
 
   // ── Multipart video upload endpoint ──────────────────────────────────────
   // Uses multer DISK storage so large video files are streamed to a temp
@@ -282,6 +408,45 @@ async function startServer() {
     }),
   );
 
+  /**
+   * Internal admin endpoint: trigger (or re-trigger) analysis for a video by ID.
+   * Protected by JWT_SECRET in the x-internal-secret header.
+   * Only intended to be called from localhost / SSH tunnel.
+   */
+  app.post("/api/internal/trigger-analysis", express.json(), async (req, res) => {
+    const { ENV } = await import("./env.js");
+    if (!ENV.jwtSecret || req.headers["x-internal-secret"] !== ENV.jwtSecret) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+    const videoId = Number(req.body?.videoId);
+    if (!videoId) {
+      res.status(400).json({ error: "videoId required" });
+      return;
+    }
+    const video = await db.getVideoAnalysis(videoId);
+    if (!video) {
+      res.status(404).json({ error: "Video not found" });
+      return;
+    }
+    // Reset status and kick off async analysis
+    await db.updateVideoAnalysis(videoId, { status: "analyzing", analysisResults: null, errorMessage: null });
+    res.json({ success: true, videoId, status: "analyzing" });
+
+    // Run analysis in background
+    analyzeSquashVideoPublic(
+      video.videoUrl,
+      video.playerName ?? undefined,
+      video.playerDescription ?? undefined,
+      (video.coachNotes as Parameters<typeof analyzeSquashVideoPublic>[3]) ?? null,
+    )
+      .then((results) => db.updateVideoAnalysis(videoId, { status: "complete", analysisResults: results }))
+      .catch((err: Error) => {
+        console.error(`[internal] Analysis failed for video ${videoId}:`, err.message);
+        db.updateVideoAnalysis(videoId, { status: "failed", errorMessage: err.message });
+      });
+  });
+
   const preferredPort = parseInt(process.env.PORT || "3000");
 
   // Always bind to the preferred port. If it is occupied (e.g. by a stale
@@ -292,6 +457,14 @@ async function startServer() {
     const tryListen = (attemptsLeft: number) => {
       server.listen(preferredPort, () => {
         console.log(`[api] server listening on port ${preferredPort}`);
+        // Reset any zombie jobs left over from a previous crash/restart
+        db.resetZombieJobs().then((count) => {
+          if (count > 0) {
+            console.log(`[api] Reset ${count} zombie job(s) stuck in analyzing/pending state`);
+          }
+        }).catch((err) => {
+          console.warn("[api] Failed to reset zombie jobs:", err);
+        });
         resolve();
       });
       server.once("error", (err: NodeJS.ErrnoException) => {

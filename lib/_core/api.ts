@@ -133,8 +133,9 @@ export async function getMe(): Promise<{
   lastSignedIn: string;
 } | null> {
   try {
-    const result = await apiCall<{ user: any }>("/api/auth/me");
-    return result.user || null;
+    const result = await apiCall<any>("/api/auth/me");
+    // handleMe returns the user object directly (not wrapped in { user: ... })
+    return result || null;
   } catch (error) {
     console.error("[API] getMe failed:", error);
     return null;

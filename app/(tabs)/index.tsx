@@ -22,6 +22,7 @@ import { SquashBall } from "@/components/squash-ball";
 import { useColors } from "@/hooks/use-colors";
 import { useAuthContext } from "@/lib/auth-provider";
 import Svg, { Polyline } from "react-native-svg";
+import { SmartSquashLogo } from "@/components/smartsquash-logo";
 
 type VideoAnalysis = {
   id: string;
@@ -71,7 +72,14 @@ export default function HomeScreen() {
   const [playerDescription, setPlayerDescription] = useState("");
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState("");
+  const [meetingNotes, setMeetingNotes] = useState("");
+  const [meetingNotesFileName, setMeetingNotesFileName] = useState("");
+  const [meetingNotesUrl, setMeetingNotesUrl] = useState("");
+  const [meetingNotesUrlError, setMeetingNotesUrlError] = useState("");
+  const [fetchingNotes, setFetchingNotes] = useState(false);
+  const [notesExpanded, setNotesExpanded] = useState(false);
   const webFileInputRef = useRef<HTMLInputElement | null>(null);
+  const notesFileInputRef = useRef<HTMLInputElement | null>(null);
 
   // ── Video list state ──────────────────────────────────────────
   const { data: videosData, isLoading, refetch } = trpc.videos.list.useQuery(
@@ -82,6 +90,12 @@ export default function HomeScreen() {
     onSuccess: () => refetch(),
   });
   const handleDeleteFailed = (id: string, title: string) => {
+    if (Platform.OS === "web") {
+      if (window.confirm(`Delete "${title}"? This cannot be undone.`)) {
+        deleteVideo.mutate({ id: parseInt(id, 10) });
+      }
+      return;
+    }
     Alert.alert(
       "Delete Session",
       `Delete "${title}"? This cannot be undone.`,
@@ -271,6 +285,47 @@ export default function HomeScreen() {
       setUploadProgress(`\u274c ${msg}`);
     } finally { setUploading(false); }
   };
+  // ── Meeting notes helpers ─────────────────────────────────────
+  const handleNotesFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setMeetingNotesFileName(file.name);
+    const text = await file.text();
+    setMeetingNotes(text);
+    setMeetingNotesUrl("");
+    setMeetingNotesUrlError("");
+    setNotesExpanded(true);
+  };
+
+  const handleFetchNotesUrl = async () => {
+    const url = meetingNotesUrl.trim();
+    if (!url) return;
+
+    // Support Google Docs: extract document ID and use export URL
+    const gdocMatch = url.match(/docs\.google\.com\/document\/d\/([a-zA-Z0-9_-]+)/);
+    if (gdocMatch) {
+      const docId = gdocMatch[1];
+      const exportUrl = `https://docs.google.com/document/d/${docId}/export?format=txt`;
+      setFetchingNotes(true);
+      setMeetingNotesUrlError("");
+      try {
+        const res = await fetch(exportUrl);
+        if (!res.ok) throw new Error(`Could not fetch doc (${res.status}) — make sure it's set to "Anyone with the link can view"`);
+        const text = await res.text();
+        setMeetingNotes(text.trim());
+        setMeetingNotesFileName(`Google Doc (${docId.slice(0, 8)}…)`);
+        setNotesExpanded(true);
+      } catch (err: any) {
+        setMeetingNotesUrlError(err.message ?? "Failed to fetch Google Doc");
+      } finally {
+        setFetchingNotes(false);
+      }
+      return;
+    }
+
+    setMeetingNotesUrlError("Only Google Doc links are supported. Share the doc as 'Anyone with the link can view'.");
+  };
+
   const handleUpload = async () => {
     if (!videoUri || !title) return;
     setUploading(true);
@@ -278,7 +333,6 @@ export default function HomeScreen() {
     try {
       // Use the stored File object directly if available (avoids fetch(objectURL)
       // failures for .mov / video/quicktime files in some browsers).
-      // Fall back to fetching the object URL for any edge case where File is missing.
       let fileToUpload: File | Blob;
       if (videoFile) {
         fileToUpload = videoFile;
@@ -287,40 +341,58 @@ export default function HomeScreen() {
         fileToUpload = await response.blob();
       }
 
-      setUploadProgress("Uploading to server…");
-
       // Normalise MIME type: video/quicktime → video/mp4 for server compatibility
       const rawMime = fileToUpload.type || "video/mp4";
       const normalisedMime = rawMime === "video/quicktime" ? "video/mp4" : rawMime;
       const ext = normalisedMime.split("/")[1] || "mp4";
-
-      // Build multipart FormData — no base64 encoding needed
-      const formData = new FormData();
-      // Re-wrap with normalised MIME so multer receives a consistent type
       const uploadBlob = normalisedMime !== rawMime
         ? new File([fileToUpload], `video.${ext}`, { type: normalisedMime })
         : fileToUpload;
-      formData.append("video", uploadBlob, `video.${ext}`);
-      formData.append("title", title);
-      if (playerName) formData.append("playerName", playerName);
-      if (playerDescription) formData.append("playerDescription", playerDescription);
 
       const apiBase = getApiBaseUrl();
-      const res = await fetch(`${apiBase}/api/upload-video`, {
-        method: "POST",
-        body: formData,
-        credentials: "include",
-      });
 
-      if (!res.ok) {
-        let errMsg = `Upload failed (HTTP ${res.status})`;
-        try {
-          const errJson = await res.json();
-          errMsg = errJson.error || errMsg;
-        } catch {
-          const errText = await res.text().catch(() => "");
-          if (errText) errMsg = errText;
-        }
+      // Step 1: Get a presigned S3 PUT URL — upload goes directly from browser to S3,
+      // completely bypassing the API server (no nginx body-size limits).
+      setUploadProgress("Getting upload URL…");
+      const presignRes = await fetch(
+        `${apiBase}/api/presign-upload?mimeType=${encodeURIComponent(normalisedMime)}`,
+        { credentials: "include" },
+      );
+      if (!presignRes.ok) throw new Error(`Failed to get upload URL (HTTP ${presignRes.status})`);
+      const { uploadUrl, publicUrl, key: s3Key } = await presignRes.json() as {
+        uploadUrl: string;
+        publicUrl: string;
+        key: string;
+      };
+
+      // Step 2: PUT the video directly to S3 using the presigned URL.
+      setUploadProgress("Uploading video to S3…");
+      const s3Res = await fetch(uploadUrl, {
+        method: "PUT",
+        body: uploadBlob,
+        headers: { "Content-Type": normalisedMime },
+      });
+      if (!s3Res.ok) throw new Error(`S3 upload failed (HTTP ${s3Res.status})`);
+
+      // Step 3: Tell the API about the completed upload so it creates the DB record
+      // and kicks off AI analysis.
+      setUploadProgress("Starting analysis…");
+      const registerRes = await fetch(`${apiBase}/api/register-upload`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          s3Key,
+          s3Url: publicUrl,
+          title,
+          playerName: playerName || undefined,
+          playerDescription: playerDescription || undefined,
+          meetingNotes: meetingNotes.trim() || undefined,
+        }),
+      });
+      if (!registerRes.ok) {
+        let errMsg = `Registration failed (HTTP ${registerRes.status})`;
+        try { const j = await registerRes.json(); errMsg = j.error || errMsg; } catch { /* ignore */ }
         throw new Error(errMsg);
       }
 
@@ -331,6 +403,10 @@ export default function HomeScreen() {
       setTitle("");
       setPlayerName("");
       setPlayerDescription("");
+      setMeetingNotes("");
+      setMeetingNotesFileName("");
+      setMeetingNotesUrl("");
+      setNotesExpanded(false);
       setUploadProgress("");
       refetch();
     } catch (err) {
@@ -357,8 +433,8 @@ export default function HomeScreen() {
   const renderVideoCard = ({ item }: { item: VideoAnalysis }) => (
     <View style={{ marginBottom: 16 }}>
       <Pressable
-        onPress={item.status === "failed" ? undefined : () => router.push(`/video/${item.id}` as any)}
-        style={({ pressed }) => ({ opacity: (pressed && item.status !== "failed") ? 0.7 : 1 })}
+        onPress={() => router.push(`/video/${item.id}` as any)}
+        style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
       >
         <View
           style={{
@@ -471,14 +547,24 @@ export default function HomeScreen() {
     <ScreenContainer>
       {/* Hidden web file input */}
       {Platform.OS === "web" && (
-        // @ts-ignore
-        <input
-          ref={webFileInputRef}
-          type="file"
-          accept="video/*"
-          style={{ display: "none" }}
-          onChange={handleWebFileChange as any}
-        />
+        <>
+          {/* @ts-ignore */}
+          <input
+            ref={webFileInputRef}
+            type="file"
+            accept="video/*"
+            style={{ display: "none" }}
+            onChange={handleWebFileChange as any}
+          />
+          {/* @ts-ignore */}
+          <input
+            ref={notesFileInputRef}
+            type="file"
+            accept=".txt,.md,.text"
+            style={{ display: "none" }}
+            onChange={handleNotesFileChange as any}
+          />
+        </>
       )}
       {/* ── Analysis-complete banner ── */}
       {banner && (
@@ -556,15 +642,19 @@ export default function HomeScreen() {
               marginBottom: 4,
             }}
           >
-            <Text
-              style={{
-                fontSize: 28,
-                fontWeight: "700",
-                color: colors.foreground,
-              }}
-            >
-              Squash Analyzer
-            </Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <SmartSquashLogo size={32} />
+              <Text
+                style={{
+                  fontSize: 20,
+                  fontWeight: "800",
+                  color: colors.primary,
+                  letterSpacing: 2,
+                }}
+              >
+                SMARTSQUASH
+              </Text>
+            </View>
             {/* User avatar / logout button */}
             <TouchableOpacity
               onPress={() => router.push("/profile" as any)}
@@ -885,6 +975,135 @@ export default function HomeScreen() {
               />
             </View>
 
+            {/* ── Coach Meeting Notes (collapsible) ── */}
+            <TouchableOpacity
+              onPress={() => setNotesExpanded(v => !v)}
+              style={{
+                flexDirection: "row", alignItems: "center",
+                backgroundColor: meetingNotes.trim() ? colors.primary + "10" : colors.background,
+                borderRadius: 10, padding: 12,
+                borderWidth: 1,
+                borderColor: meetingNotes.trim() ? colors.primary + "40" : colors.border,
+                marginBottom: notesExpanded ? 0 : 16,
+              }}
+            >
+              <Text style={{ fontSize: 16, marginRight: 8 }}>📋</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 13, fontWeight: "600", color: meetingNotes.trim() ? colors.primary : colors.foreground }}>
+                  {meetingNotes.trim()
+                    ? `Coach Notes · ${meetingNotes.trim().split(/\s+/).length} words`
+                    : "Add Coach Meeting Notes"}
+                </Text>
+                <Text style={{ fontSize: 11, color: colors.muted, marginTop: 1 }}>
+                  {meetingNotes.trim() ? "Tap to edit" : "Optional · upload .txt file or paste Google Doc"}
+                </Text>
+              </View>
+              <Text style={{ color: colors.muted, fontSize: 16 }}>{notesExpanded ? "▲" : "▼"}</Text>
+            </TouchableOpacity>
+
+            {notesExpanded && (
+              <View style={{
+                borderWidth: 1, borderColor: colors.primary + "30",
+                borderTopWidth: 0, borderBottomLeftRadius: 10, borderBottomRightRadius: 10,
+                padding: 14, backgroundColor: colors.background, marginBottom: 16,
+              }}>
+                {/* Upload file + Google Doc row */}
+                <View style={{ flexDirection: "row", gap: 8, marginBottom: 10 }}>
+                  {/* Upload .txt file */}
+                  {Platform.OS === "web" && (
+                    <TouchableOpacity
+                      onPress={() => (notesFileInputRef.current as any)?.click()}
+                      style={{
+                        flex: 1, flexDirection: "row", alignItems: "center", gap: 6,
+                        backgroundColor: colors.surface, borderRadius: 8,
+                        borderWidth: 1, borderColor: colors.border, padding: 10,
+                      }}
+                    >
+                      <Text style={{ fontSize: 16 }}>📄</Text>
+                      <Text style={{ fontSize: 12, color: colors.foreground, fontWeight: "600" }}>
+                        {meetingNotesFileName || "Upload .txt"}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                  {/* Google Doc URL */}
+                  <View style={{ flex: 2 }}>
+                    <View style={{ flexDirection: "row", gap: 6 }}>
+                      <TextInput
+                        value={meetingNotesUrl}
+                        onChangeText={(t) => { setMeetingNotesUrl(t); setMeetingNotesUrlError(""); }}
+                        placeholder="Paste Google Doc link…"
+                        placeholderTextColor={colors.muted}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        style={{
+                          flex: 1, backgroundColor: colors.surface,
+                          borderWidth: 1, borderColor: meetingNotesUrlError ? colors.error : colors.border,
+                          borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8,
+                          fontSize: 13, color: colors.foreground,
+                        }}
+                      />
+                      <TouchableOpacity
+                        onPress={handleFetchNotesUrl}
+                        disabled={!meetingNotesUrl.trim() || fetchingNotes}
+                        style={{
+                          backgroundColor: meetingNotesUrl.trim() ? "#4285F4" : colors.muted + "40",
+                          borderRadius: 8, paddingHorizontal: 12, alignItems: "center", justifyContent: "center",
+                        }}
+                      >
+                        {fetchingNotes
+                          ? <ActivityIndicator size="small" color="#fff" />
+                          : <Text style={{ color: "#fff", fontSize: 12, fontWeight: "700" }}>Load</Text>}
+                      </TouchableOpacity>
+                    </View>
+                    {meetingNotesUrlError ? (
+                      <Text style={{ fontSize: 11, color: colors.error, marginTop: 4 }}>{meetingNotesUrlError}</Text>
+                    ) : null}
+                  </View>
+                </View>
+
+                {/* Text area */}
+                {Platform.OS === "web" ? (
+                  // @ts-ignore
+                  <textarea
+                    value={meetingNotes}
+                    onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setMeetingNotes(e.target.value)}
+                    placeholder={"Paste coach notes here, or load from a file / Google Doc above…\n\nExample:\nMatch 1 — Jeffrey's backhand was inconsistent under pressure. Tends to hit too high on the tin. Work on lower contact point.\n\nMatch 2 — Better footwork today. Needs to recover to the T faster after boasts."}
+                    rows={8}
+                    style={{
+                      width: "100%", padding: "10px 12px", borderRadius: 8,
+                      border: `1px solid ${colors.border}`,
+                      backgroundColor: colors.surface, color: colors.foreground,
+                      fontSize: 13, lineHeight: "1.6", boxSizing: "border-box",
+                      resize: "vertical", fontFamily: "inherit",
+                    }}
+                  />
+                ) : (
+                  <TextInput
+                    value={meetingNotes}
+                    onChangeText={setMeetingNotes}
+                    placeholder="Paste coach meeting notes here…"
+                    placeholderTextColor={colors.muted}
+                    multiline
+                    style={{
+                      backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
+                      borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10,
+                      fontSize: 13, color: colors.foreground, minHeight: 140, textAlignVertical: "top",
+                    }}
+                  />
+                )}
+                {meetingNotes.trim() ? (
+                  <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 6 }}>
+                    <Text style={{ fontSize: 11, color: colors.muted }}>
+                      {meetingNotes.trim().split(/\s+/).length} words · will be used in AI analysis
+                    </Text>
+                    <TouchableOpacity onPress={() => { setMeetingNotes(""); setMeetingNotesFileName(""); setMeetingNotesUrl(""); }}>
+                      <Text style={{ fontSize: 11, color: colors.error }}>Clear</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : null}
+              </View>
+            )}
+
             {/* Progress message */}
             {uploadProgress ? (
               <Text
@@ -916,19 +1135,16 @@ export default function HomeScreen() {
               {uploading ? (
                 <ActivityIndicator color={colors.background} />
               ) : (
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                  <SquashBall size={18} />
-                  <Text
-                    style={{
-                      fontWeight: "600",
-                      fontSize: 16,
-                      color:
-                        (inputMode === "file" ? !videoUri : !videoUrl.trim()) || !title ? colors.muted : colors.background,
-                    }}
-                  >
-                    Analyze Video
-                  </Text>
-                </View>
+                <Text
+                  style={{
+                    fontWeight: "600",
+                    fontSize: 16,
+                    color:
+                      (inputMode === "file" ? !videoUri : !videoUrl.trim()) || !title ? colors.muted : colors.background,
+                  }}
+                >
+                  {meetingNotes.trim() ? "🎾 Analyze with Coach Notes" : "🎾 Analyze Video"}
+                </Text>
               )}
             </TouchableOpacity>
 

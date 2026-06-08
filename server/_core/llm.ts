@@ -203,7 +203,7 @@ const normalizeToolChoice = (
 
 const resolveApiUrl = () =>
   ENV.forgeApiUrl && ENV.forgeApiUrl.trim().length > 0
-    ? `${ENV.forgeApiUrl.replace(/\/$/, "")}/v1/chat/completions`
+    ? ENV.forgeApiUrl.replace(/\/$/, "")
     : "https://forge.manus.im/v1/chat/completions";
 
 const assertApiKey = () => {
@@ -252,6 +252,12 @@ const normalizeResponseFormat = ({
   };
 };
 
+/**
+ * Retry delays (ms) for 429 / 5xx responses.
+ * Waits 30s → 60s → 120s before giving up.
+ */
+const RETRY_DELAYS_MS = [30_000, 60_000, 120_000];
+
 export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   assertApiKey();
 
@@ -267,7 +273,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   } = params;
 
   const payload: Record<string, unknown> = {
-    model: "gemini-2.5-flash",
+    model: "models/gemini-2.5-flash-lite",
     messages: messages.map(normalizeMessage),
   };
 
@@ -281,9 +287,6 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   }
 
   payload.max_tokens = 32768;
-  payload.thinking = {
-    budget_tokens: 128,
-  };
 
   const normalizedResponseFormat = normalizeResponseFormat({
     responseFormat,
@@ -296,19 +299,48 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     payload.response_format = normalizedResponseFormat;
   }
 
-  const response = await fetch(resolveApiUrl(), {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      authorization: `Bearer ${ENV.forgeApiKey}`,
-    },
-    body: JSON.stringify(payload),
-  });
+  const bodyStr = JSON.stringify(payload);
 
-  if (!response.ok) {
+  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5 * 60 * 1000); // 5 min timeout
+
+    let response: Response;
+    try {
+      response = await fetch(resolveApiUrl(), {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${ENV.forgeApiKey}`,
+        },
+        body: bodyStr,
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
+    if (response.ok) {
+      return (await response.json()) as InvokeResult;
+    }
+
     const errorText = await response.text();
+    const isRateLimit = response.status === 429;
+    const isServerError = response.status >= 500;
+
+    // Only retry on rate-limit or transient server errors
+    if ((isRateLimit || isServerError) && attempt < RETRY_DELAYS_MS.length) {
+      const delayMs = RETRY_DELAYS_MS[attempt];
+      console.warn(
+        `[llm] ${response.status} on attempt ${attempt + 1}/${RETRY_DELAYS_MS.length + 1} — retrying in ${delayMs / 1000}s`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      continue;
+    }
+
     throw new Error(`LLM invoke failed: ${response.status} ${response.statusText} – ${errorText}`);
   }
 
-  return (await response.json()) as InvokeResult;
+  // TypeScript: unreachable but satisfies return type
+  throw new Error("LLM invoke failed: all retries exhausted");
 }

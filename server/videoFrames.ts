@@ -25,10 +25,22 @@ const execFileAsync = promisify(execFile);
 export interface ExtractedFrame {
   /** 0-based index of this frame */
   index: number;
-  /** Public S3 URL of the JPEG image */
+  /** Public S3 / CloudFront URL of the JPEG image (for display in the UI) */
   url: string;
   /** Timestamp in seconds within the video where this frame was taken */
   timestampSec: number;
+  /**
+   * Base64-encoded JPEG data (no data-URI prefix).
+   * Included so callers can send the image inline to LLM APIs instead of
+   * relying on the CDN URL being reachable from the model's servers.
+   */
+  base64?: string;
+  /**
+   * Relative motion score (JPEG size / average JPEG size across all frames).
+   * Values > 1.0 indicate above-average motion (likely active play).
+   * Values < 0.7 suggest low motion (possible game break or static scene).
+   */
+  motionScore?: number;
 }
 
 /**
@@ -107,8 +119,14 @@ export async function extractAndUploadFrames(
     return extractFramesFromLocalFile(videoSource, frameCount);
   }
 
-  // For URL sources: stream-download to a temp file, then extract frames
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "squash-frames-"));
+  // For URL sources: stream-download to a temp file, then extract frames.
+  // Use a disk-backed directory to avoid overflowing /tmp (which is often a
+  // small tmpfs — e.g. 459 MB — that can't hold a 600+ MB video file).
+  // Prefer VIDEO_TMP_DIR env var, then /var/tmp (disk-backed on Linux),
+  // then fall back to os.tmpdir() for local dev.
+  const tmpBase = process.env.VIDEO_TMP_DIR
+    || (fs.existsSync("/var/tmp") ? "/var/tmp" : os.tmpdir());
+  const tmpDir = fs.mkdtempSync(path.join(tmpBase, "squash-frames-"));
   const videoPath = path.join(tmpDir, "video.mp4");
   try {
     console.log(`[frames] Streaming download from ${videoSource}`);
@@ -125,12 +143,24 @@ export async function extractAndUploadFrames(
 
 /**
  * Internal: extract frames from a local video file and upload to S3.
+ *
+ * To avoid selecting frames that fall during game breaks (between games,
+ * between points, towelling-off, etc.), we split the video into `frameCount`
+ * equal segments and within each segment extract CANDIDATES_PER_SEGMENT frames
+ * at evenly-spaced sub-positions. We then pick the candidate with the largest
+ * JPEG file size — a reliable proxy for motion activity, since JPEG compression
+ * is less effective on high-motion frames (blurry players, fast movement) than
+ * on static scenes (players standing still during a break).
  */
+const CANDIDATES_PER_SEGMENT = 3; // how many candidate timestamps to try per segment
+
 async function extractFramesFromLocalFile(
   videoPath: string,
   frameCount: number,
 ): Promise<ExtractedFrame[]> {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "squash-frames-"));
+  const tmpBase = process.env.VIDEO_TMP_DIR
+    || (fs.existsSync("/var/tmp") ? "/var/tmp" : os.tmpdir());
+  const tmpDir = fs.mkdtempSync(path.join(tmpBase, "squash-frames-"));
   try {
     const duration = await getVideoDuration(videoPath);
     console.log(`[frames] Video duration: ${duration.toFixed(1)}s`);
@@ -138,30 +168,70 @@ async function extractFramesFromLocalFile(
       throw new Error("Could not determine video duration");
     }
 
-    // Place frames at evenly-spaced intervals, avoiding the very start/end.
-    // e.g. for 12 frames in a 150s video: 6.25s, 18.75s, 31.25s, ...
-    const interval = duration / frameCount;
-    const timestamps = Array.from(
-      { length: frameCount },
-      (_, i) => interval * (i + 0.5),
-    );
+    // Divide video into frameCount equal segments.
+    // Within each segment, sample CANDIDATES_PER_SEGMENT timestamps and pick
+    // the one whose extracted JPEG is largest (= most motion = most likely
+    // to be an active rally rather than a game break).
+    const segmentDuration = duration / frameCount;
 
     const frames: ExtractedFrame[] = [];
-    for (let i = 0; i < timestamps.length; i++) {
-      const ts = timestamps[i];
-      const framePath = path.join(tmpDir, `frame-${i}.jpg`);
-      console.log(`[frames] Extracting frame ${i + 1}/${frameCount} at ${ts.toFixed(1)}s`);
-      await extractFrame(videoPath, ts, framePath);
 
-      if (!fs.existsSync(framePath)) {
-        console.warn(`[frames] Frame ${i + 1} not extracted, skipping`);
+    for (let seg = 0; seg < frameCount; seg++) {
+      const segStart = seg * segmentDuration;
+      const segEnd = segStart + segmentDuration;
+
+      // Candidate timestamps: evenly spaced within this segment
+      const candidates = Array.from(
+        { length: CANDIDATES_PER_SEGMENT },
+        (_, k) => segStart + segmentDuration * ((k + 1) / (CANDIDATES_PER_SEGMENT + 1)),
+      );
+
+      let bestBuffer: Buffer | null = null;
+      let bestTs = candidates[0];
+
+      for (let k = 0; k < candidates.length; k++) {
+        const ts = candidates[k];
+        const candidatePath = path.join(tmpDir, `seg-${seg}-cand-${k}.jpg`);
+        try {
+          await extractFrame(videoPath, ts, candidatePath);
+          if (!fs.existsSync(candidatePath)) continue;
+          const buf = fs.readFileSync(candidatePath);
+          // Pick the largest JPEG (highest activity / motion)
+          if (bestBuffer === null || buf.length > bestBuffer.length) {
+            bestBuffer = buf;
+            bestTs = ts;
+          }
+        } catch {
+          // Skip failed extractions
+        }
+      }
+
+      if (!bestBuffer) {
+        console.warn(`[frames] Segment ${seg + 1}/${frameCount}: no frame extracted, skipping`);
         continue;
       }
 
-      const frameBuffer = fs.readFileSync(framePath);
-      const uploadKey = `frames/${Date.now()}-frame-${i}.jpg`;
-      const { url } = await storagePut(uploadKey, frameBuffer, "image/jpeg");
-      frames.push({ index: i, url, timestampSec: ts });
+      console.log(
+        `[frames] Segment ${seg + 1}/${frameCount}: best frame at ${bestTs.toFixed(1)}s` +
+        ` (${(bestBuffer.length / 1024).toFixed(0)}KB, window ${segStart.toFixed(0)}–${segEnd.toFixed(0)}s)`,
+      );
+
+      const uploadKey = `frames/${Date.now()}-frame-${seg}.jpg`;
+      const { url } = await storagePut(uploadKey, bestBuffer, "image/jpeg");
+      frames.push({ index: seg, url, timestampSec: bestTs, base64: bestBuffer.toString("base64") });
+    }
+
+    // Compute relative motion scores so the AI (and any callers) can tell
+    // which frames are high-activity (score > 1.0) vs likely breaks (score < 0.7).
+    // We decode base64 back to bytes just for the size — no pixel processing needed.
+    if (frames.length > 0) {
+      const sizes = frames.map((f) => (f.base64 ? Buffer.byteLength(f.base64, "base64") : 0));
+      const avgSize = sizes.reduce((a, b) => a + b, 0) / sizes.length;
+      if (avgSize > 0) {
+        frames.forEach((f, i) => {
+          f.motionScore = Math.round((sizes[i] / avgSize) * 100) / 100;
+        });
+      }
     }
 
     console.log(`[frames] Extracted and uploaded ${frames.length} frames`);
