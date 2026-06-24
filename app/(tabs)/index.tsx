@@ -71,6 +71,8 @@ export default function HomeScreen() {
   const [playerDescription, setPlayerDescription] = useState("");
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState("");
+  const [analyzingVideoId, setAnalyzingVideoId] = useState<number | null>(null);
+  const [analysisProgress, setAnalysisProgress] = useState<{ step: string; pct: number } | null>(null);
   const webFileInputRef = useRef<HTMLInputElement | null>(null);
 
   // ── Video list state ──────────────────────────────────────────
@@ -113,6 +115,28 @@ export default function HomeScreen() {
     const timer = setInterval(() => refetch(), 5000);
     return () => clearInterval(timer);
   }, [videosData, refetch, showBanner]);
+
+  // Poll analysis progress while a video is being analyzed
+  useEffect(() => {
+    if (!analyzingVideoId) return;
+    const apiBase = getApiBaseUrl();
+    const poll = setInterval(async () => {
+      try {
+        const res = await fetch(`${apiBase}/api/analysis-progress/${analyzingVideoId}`);
+        if (!res.ok) return;
+        const data = await res.json() as { step: string; pct: number };
+        setAnalysisProgress(data);
+        if (data.pct >= 100) {
+          clearInterval(poll);
+          setTimeout(() => {
+            setAnalyzingVideoId(null);
+            setAnalysisProgress(null);
+          }, 1500);
+        }
+      } catch { /* ignore */ }
+    }, 1000);
+    return () => clearInterval(poll);
+  }, [analyzingVideoId]);
   const videos: VideoAnalysis[] = (videosData || []).map((v) => {
     const r = (v.analysisResults as { performanceScore?: number; performanceGrade?: string; suggestions?: { title: string }[] } | null) ?? null;
     return {
@@ -287,42 +311,105 @@ export default function HomeScreen() {
         fileToUpload = await response.blob();
       }
 
-      setUploadProgress("Uploading to server…");
-
       // Normalise MIME type: video/quicktime → video/mp4 for server compatibility
       const rawMime = fileToUpload.type || "video/mp4";
       const normalisedMime = rawMime === "video/quicktime" ? "video/mp4" : rawMime;
       const ext = normalisedMime.split("/")[1] || "mp4";
-
-      // Build multipart FormData — no base64 encoding needed
-      const formData = new FormData();
-      // Re-wrap with normalised MIME so multer receives a consistent type
       const uploadBlob = normalisedMime !== rawMime
         ? new File([fileToUpload], `video.${ext}`, { type: normalisedMime })
         : fileToUpload;
-      formData.append("video", uploadBlob, `video.${ext}`);
-      formData.append("title", title);
-      if (playerName) formData.append("playerName", playerName);
-      if (playerDescription) formData.append("playerDescription", playerDescription);
 
       const apiBase = getApiBaseUrl();
-      const res = await fetch(`${apiBase}/api/upload-video`, {
+
+      // Step 1: get multipart presigned URLs (10 MB chunks uploaded in parallel)
+      setUploadProgress("Preparing upload… 0%");
+      const presignRes = await fetch(`${apiBase}/api/presign-multipart`, {
         method: "POST",
-        body: formData,
+        headers: { "Content-Type": "application/json" },
         credentials: "include",
+        body: JSON.stringify({
+          title, playerName, playerDescription,
+          mimeType: normalisedMime, fileExt: ext,
+          fileSize: uploadBlob.size,
+        }),
+      });
+      if (!presignRes.ok) {
+        const e = await presignRes.json().catch(() => ({})) as { error?: string };
+        throw new Error(e.error || `Presign failed (${presignRes.status})`);
+      }
+      const { videoId, uploadId, key, videoUrl, partUrls, partSize } =
+        await presignRes.json() as {
+          videoId: number; uploadId: string; key: string; videoUrl: string;
+          partUrls: string[]; partSize: number;
+        };
+
+      // Step 2: upload all parts in parallel (4 at a time) with combined progress
+      setUploadProgress("Uploading video… 0%");
+      const totalSize = uploadBlob.size;
+      const bytesUploaded = new Array(partUrls.length).fill(0);
+      const updateProgress = () => {
+        const done = bytesUploaded.reduce((a, b) => a + b, 0);
+        const pct = Math.round((done / totalSize) * 100);
+        setUploadProgress(`Uploading video… ${pct}%`);
+      };
+
+      const CONCURRENCY = 8;
+      const etags: { PartNumber: number; ETag: string }[] = [];
+      const uploadPart = async (i: number): Promise<void> => {
+        const start = i * partSize;
+        const end = Math.min(start + partSize, totalSize);
+        const chunk = uploadBlob.slice(start, end);
+        const etag = await new Promise<string>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open("PUT", partUrls[i]);
+          xhr.upload.onprogress = (e) => {
+            bytesUploaded[i] = e.loaded;
+            updateProgress();
+          };
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              bytesUploaded[i] = end - start;
+              updateProgress();
+              resolve(xhr.getResponseHeader("ETag") ?? "");
+            } else {
+              reject(new Error(`Part ${i + 1} upload failed (${xhr.status})`));
+            }
+          };
+          xhr.onerror = () => reject(new Error(`Part ${i + 1} network error`));
+          xhr.send(chunk);
+        });
+        etags.push({ PartNumber: i + 1, ETag: etag });
+      };
+
+      // Run CONCURRENCY parts at a time
+      for (let i = 0; i < partUrls.length; i += CONCURRENCY) {
+        await Promise.all(
+          partUrls.slice(i, i + CONCURRENCY).map((_, j) => uploadPart(i + j))
+        );
+      }
+      etags.sort((a, b) => a.PartNumber - b.PartNumber);
+
+      // Step 3: complete the multipart upload
+      setUploadProgress("Finalising upload…");
+      const completeRes = await fetch(`${apiBase}/api/complete-multipart`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key, uploadId, parts: etags }),
+      });
+      if (!completeRes.ok) throw new Error("Failed to complete multipart upload");
+
+      // Step 4: tell the server to start analysis
+      setUploadProgress("Starting analysis…");
+      await fetch(`${apiBase}/api/start-analysis`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ videoId, videoUrl, playerName, playerDescription }),
       });
 
-      if (!res.ok) {
-        let errMsg = `Upload failed (HTTP ${res.status})`;
-        try {
-          const errJson = await res.json();
-          errMsg = errJson.error || errMsg;
-        } catch {
-          const errText = await res.text().catch(() => "");
-          if (errText) errMsg = errText;
-        }
-        throw new Error(errMsg);
-      }
+      // Poll analysis progress
+      setAnalyzingVideoId(videoId);
+      setAnalysisProgress({ step: "Starting…", pct: 0 });
 
       // Reset form
       setVideoUri(null);
@@ -885,18 +972,34 @@ export default function HomeScreen() {
               />
             </View>
 
-            {/* Progress message */}
+            {/* Upload progress bar */}
             {uploadProgress ? (
-              <Text
-                style={{
-                  fontSize: 13,
-                  color: colors.muted,
-                  textAlign: "center",
-                  marginBottom: 10,
-                }}
-              >
-                {uploadProgress}
-              </Text>
+              <View style={{ marginBottom: 10 }}>
+                <Text style={{ fontSize: 13, color: colors.muted, textAlign: "center", marginBottom: 6 }}>
+                  {uploadProgress}
+                </Text>
+                {(() => {
+                  const pct = parseInt(uploadProgress.match(/(\d+)%/)?.[1] ?? "-1");
+                  if (pct < 0) return null;
+                  return (
+                    <View style={{ height: 4, backgroundColor: colors.border ?? "#e0e0e0", borderRadius: 2, marginHorizontal: 8 }}>
+                      <View style={{ height: 4, width: `${pct}%` as any, backgroundColor: colors.primary ?? "#007AFF", borderRadius: 2 }} />
+                    </View>
+                  );
+                })()}
+              </View>
+            ) : null}
+
+            {/* Analysis progress bar (shown after upload completes) */}
+            {analysisProgress ? (
+              <View style={{ marginBottom: 10 }}>
+                <Text style={{ fontSize: 13, color: colors.muted, textAlign: "center", marginBottom: 6 }}>
+                  🔍 {analysisProgress.step}
+                </Text>
+                <View style={{ height: 4, backgroundColor: colors.border ?? "#e0e0e0", borderRadius: 2, marginHorizontal: 8 }}>
+                  <View style={{ height: 4, width: `${analysisProgress.pct}%` as any, backgroundColor: "#34C759", borderRadius: 2 }} />
+                </View>
+              </View>
             ) : null}
 
             {/* Analyze button */}

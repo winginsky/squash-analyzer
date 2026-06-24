@@ -1,153 +1,169 @@
-// Preconfigured storage helpers for Manus WebDev templates
-// Uses the Biz-provided storage proxy (Authorization: Bearer <token>)
+/**
+ * Storage helpers using AWS S3 directly.
+ * Credentials come from environment variables:
+ *   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION,
+ *   AWS_S3_BUCKET, AWS_CLOUDFRONT_URL
+ */
 
-import { ENV } from "./_core/env";
-import FormDataNode from "form-data";
-import { createReadStream, statSync } from "fs";
-import nodeFetch from "node-fetch";
+import { createReadStream } from "fs";
+import {
+  S3Client,
+  PutObjectCommand,
+  CreateMultipartUploadCommand,
+  UploadPartCommand,
+  CompleteMultipartUploadCommand,
+  AbortMultipartUploadCommand,
+} from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
-type StorageConfig = { baseUrl: string; apiKey: string };
-
-function getStorageConfig(): StorageConfig {
-  const baseUrl = ENV.forgeApiUrl;
-  const apiKey = ENV.forgeApiKey;
-
-  if (!baseUrl || !apiKey) {
-    throw new Error(
-      "Storage proxy credentials missing: set BUILT_IN_FORGE_API_URL and BUILT_IN_FORGE_API_KEY",
-    );
-  }
-
-  return { baseUrl: baseUrl.replace(/\/+$/, ""), apiKey };
-}
-
-function buildUploadUrl(baseUrl: string, relKey: string): URL {
-  const url = new URL("v1/storage/upload", ensureTrailingSlash(baseUrl));
-  url.searchParams.set("path", normalizeKey(relKey));
-  return url;
-}
-
-async function buildDownloadUrl(baseUrl: string, relKey: string, apiKey: string): Promise<string> {
-  const downloadApiUrl = new URL("v1/storage/downloadUrl", ensureTrailingSlash(baseUrl));
-  downloadApiUrl.searchParams.set("path", normalizeKey(relKey));
-  const response = await fetch(downloadApiUrl, {
-    method: "GET",
-    headers: buildAuthHeaders(apiKey),
+function getS3Client() {
+  return new S3Client({
+    region: process.env.AWS_REGION ?? "us-east-1",
+    credentials: {
+      accessKeyId: process.env.AWS_ACCESS_KEY_ID ?? "",
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY ?? "",
+    },
   });
-  return (await response.json() as { url: string }).url;
 }
 
-function ensureTrailingSlash(value: string): string {
-  return value.endsWith("/") ? value : `${value}/`;
+function getBucket(): string {
+  const bucket = process.env.AWS_S3_BUCKET;
+  if (!bucket) throw new Error("AWS_S3_BUCKET environment variable is not set");
+  return bucket;
+}
+
+function getPublicUrl(key: string): string {
+  const cfUrl = process.env.AWS_CLOUDFRONT_URL;
+  if (cfUrl) {
+    return `${cfUrl.replace(/\/$/, "")}/${key}`;
+  }
+  const region = process.env.AWS_REGION ?? "us-east-1";
+  const bucket = getBucket();
+  return `https://${bucket}.s3.${region}.amazonaws.com/${key}`;
 }
 
 function normalizeKey(relKey: string): string {
   return relKey.replace(/^\/+/, "");
 }
 
-function toFormData(
-  data: Buffer | Uint8Array | string,
-  contentType: string,
-  fileName: string,
-): FormData {
-  const blob =
-    typeof data === "string"
-      ? new Blob([data], { type: contentType })
-      : new Blob([data as any], { type: contentType });
-  const form = new FormData();
-  form.append("file", blob, fileName || "file");
-  return form;
-}
-
-function buildAuthHeaders(apiKey: string): HeadersInit {
-  return { Authorization: `Bearer ${apiKey}` };
-}
-
 /**
- * Streaming multipart upload using node-fetch + form-data npm package.
- * Pipes the file via fs.createReadStream — never loads the whole file into RAM.
- * Safe for files of any size (800MB+).
+ * Upload a Buffer to S3 and return the public URL.
  */
-async function storagePutFileStreaming(
-  uploadUrl: URL,
-  apiKey: string,
-  filePath: string,
-  contentType: string,
-  fileName: string,
-): Promise<string> {
-  const form = new FormDataNode();
-  const fileSize = statSync(filePath).size;
-  form.append("file", createReadStream(filePath), {
-    filename: fileName,
-    contentType,
-    knownLength: fileSize,
-  });
-  const response = await nodeFetch(uploadUrl.toString(), {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      ...form.getHeaders(),
-    },
-    body: form,
-  });
-  if (!response.ok) {
-    const message = await response.text().catch(() => response.statusText);
-    throw new Error(
-      `Storage upload failed (${response.status} ${response.statusText}): ${message}`,
-    );
-  }
-  const json = await response.json() as { url: string };
-  return json.url;
-}
-
 export async function storagePut(
   relKey: string,
   data: Buffer | Uint8Array | string,
   contentType = "application/octet-stream",
 ): Promise<{ key: string; url: string }> {
-  const { baseUrl, apiKey } = getStorageConfig();
   const key = normalizeKey(relKey);
-  const uploadUrl = buildUploadUrl(baseUrl, key);
-  const formData = toFormData(data, contentType, key.split("/").pop() ?? key);
-  const response = await fetch(uploadUrl, {
-    method: "POST",
-    headers: buildAuthHeaders(apiKey),
-    body: formData,
-  });
-
-  if (!response.ok) {
-    const message = await response.text().catch(() => response.statusText);
-    throw new Error(
-      `Storage upload failed (${response.status} ${response.statusText}): ${message}`,
-    );
-  }
-  const url = (await response.json() as { url: string }).url;
-  return { key, url };
+  const client = getS3Client();
+  await client.send(new PutObjectCommand({
+    Bucket: getBucket(),
+    Key: key,
+    Body: data instanceof Buffer ? data : Buffer.from(data as any),
+    ContentType: contentType,
+  }));
+  return { key, url: getPublicUrl(key) };
 }
 
 /**
- * Upload a file directly from a local file path to storage.
- * Uses streaming (fs.createReadStream via node-fetch + form-data) to avoid
- * loading the entire file into memory — safe for large files (800MB+).
+ * Upload a local file to S3 via streaming (safe for large files).
  */
 export async function storagePutFile(
   relKey: string,
   filePath: string,
   contentType = "application/octet-stream",
 ): Promise<{ key: string; url: string }> {
-  const { baseUrl, apiKey } = getStorageConfig();
   const key = normalizeKey(relKey);
-  const uploadUrl = buildUploadUrl(baseUrl, key);
-  const fileName = key.split("/").pop() ?? key;
-  const url = await storagePutFileStreaming(uploadUrl, apiKey, filePath, contentType, fileName);
-  return { key, url };
+  const client = getS3Client();
+  await client.send(new PutObjectCommand({
+    Bucket: getBucket(),
+    Key: key,
+    Body: createReadStream(filePath) as any,
+    ContentType: contentType,
+  }));
+  return { key, url: getPublicUrl(key) };
 }
 
 export async function storageGet(relKey: string): Promise<{ key: string; url: string }> {
-  const { baseUrl, apiKey } = getStorageConfig();
   const key = normalizeKey(relKey);
-  return {
-    key,
-    url: await buildDownloadUrl(baseUrl, key, apiKey),
-  };
+  return { key, url: getPublicUrl(key) };
+}
+
+/**
+ * Generate a presigned S3 PUT URL so the browser can upload directly to S3,
+ * bypassing the nginx proxy (which has timeout/size limits).
+ * Expires in 1 hour.
+ */
+export async function getPresignedUploadUrl(
+  relKey: string,
+  contentType = "video/mp4",
+): Promise<{ uploadUrl: string; publicUrl: string; key: string }> {
+  const key = normalizeKey(relKey);
+  const client = getS3Client();
+  const command = new PutObjectCommand({
+    Bucket: getBucket(),
+    Key: key,
+    ContentType: contentType,
+  });
+  const uploadUrl = await getSignedUrl(client, command, { expiresIn: 3600 });
+  return { uploadUrl, publicUrl: getPublicUrl(key), key };
+}
+
+/**
+ * Create a multipart upload and return presigned URLs for each part.
+ * The browser uploads each part in parallel, then calls completeMultipartUpload.
+ * Each part must be at least 5 MB (except the last). partCount should be 5–20.
+ */
+export async function createMultipartUpload(
+  relKey: string,
+  contentType = "video/mp4",
+  partCount = 10,
+): Promise<{ uploadId: string; key: string; publicUrl: string; partUrls: string[] }> {
+  const key = normalizeKey(relKey);
+  const client = getS3Client();
+  const bucket = getBucket();
+
+  const { UploadId } = await client.send(new CreateMultipartUploadCommand({
+    Bucket: bucket, Key: key, ContentType: contentType,
+  }));
+  if (!UploadId) throw new Error("S3 did not return an UploadId");
+
+  const partUrls = await Promise.all(
+    Array.from({ length: partCount }, (_, i) =>
+      getSignedUrl(client, new UploadPartCommand({
+        Bucket: bucket, Key: key, UploadId, PartNumber: i + 1,
+      }), { expiresIn: 3600 }),
+    ),
+  );
+
+  return { uploadId: UploadId, key, publicUrl: getPublicUrl(key), partUrls };
+}
+
+/**
+ * Complete a multipart upload after all parts have been uploaded by the browser.
+ */
+export async function completeMultipartUpload(
+  relKey: string,
+  uploadId: string,
+  parts: { PartNumber: number; ETag: string }[],
+): Promise<void> {
+  const key = normalizeKey(relKey);
+  const client = getS3Client();
+  await client.send(new CompleteMultipartUploadCommand({
+    Bucket: getBucket(),
+    Key: key,
+    UploadId: uploadId,
+    MultipartUpload: { Parts: parts },
+  }));
+}
+
+/**
+ * Abort a multipart upload (cleanup on error).
+ */
+export async function abortMultipartUpload(relKey: string, uploadId: string): Promise<void> {
+  const key = normalizeKey(relKey);
+  const client = getS3Client();
+  await client.send(new AbortMultipartUploadCommand({
+    Bucket: getBucket(), Key: key, UploadId: uploadId,
+  })).catch(() => {});
 }

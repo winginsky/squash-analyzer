@@ -10,7 +10,7 @@ import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { appRouter, analyzeSquashVideoPublic } from "../routers";
 import { createContext } from "./context";
-import { storagePut, storagePutFile } from "../storage";
+import { storagePut, storagePutFile, getPresignedUploadUrl, createMultipartUpload, completeMultipartUpload, abortMultipartUpload } from "../storage";
 import { sdk } from "./sdk";
 import * as db from "../db";
 import { downloadVideoFromUrl, validateVideoUrl, detectVideoSource } from "../videoUrl";
@@ -68,11 +68,164 @@ async function startServer() {
     res.json({ ok: true, timestamp: Date.now() });
   });
 
+  // ── In-memory analysis progress store (videoId → progress message) ──────────
+  // Lightweight — no DB writes needed for transient progress updates.
+  const analysisProgress = new Map<number, { step: string; pct: number }>();
+
+  // ── Presigned S3 upload — browser uploads directly to S3, no nginx bottleneck ──
+  app.post("/api/presign-upload", async (req, res) => {
+    try {
+      const { title, playerName, playerDescription, mimeType, fileExt } = req.body as {
+        title?: string; playerName?: string; playerDescription?: string;
+        mimeType?: string; fileExt?: string;
+      };
+      if (!title) { res.status(400).json({ error: "Title is required" }); return; }
+      const mime = mimeType || "video/mp4";
+      const ext = (fileExt || mime.split("/")[1] || "mp4").replace("quicktime", "mov");
+      const key = `videos/${Date.now()}-${Math.random().toString(36).substring(7)}.${ext}`;
+      const { uploadUrl, publicUrl } = await getPresignedUploadUrl(key, mime);
+
+      let uploadUserId: number | undefined;
+      try { uploadUserId = (await sdk.authenticateRequest(req)).id; } catch { /* anon ok */ }
+
+      const videoId = await db.createVideoAnalysis({
+        title, playerName: playerName || undefined,
+        playerDescription: playerDescription || undefined,
+        videoUrl: publicUrl, userId: uploadUserId, status: "pending",
+      });
+      res.json({ videoId, uploadUrl, videoUrl: publicUrl });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
+  // Called by the browser after the S3 upload completes to kick off analysis
+  app.post("/api/start-analysis", express.json(), async (req, res) => {
+    try {
+      const { videoId, videoUrl, playerName, playerDescription } = req.body as {
+        videoId: number; videoUrl: string; playerName?: string; playerDescription?: string;
+      };
+      await db.updateVideoAnalysis(videoId, { status: "analyzing" });
+      analysisProgress.set(videoId, { step: "Downloading video…", pct: 5 });
+      res.json({ ok: true });
+
+      (async () => {
+        try {
+          analysisProgress.set(videoId, { step: "Downloading video…", pct: 10 });
+          // Monkey-patch progress into the analysis by hooking console output
+          const origLog = console.log;
+          let framesDone = 0, framesTotal = 0;
+          console.log = (...args: unknown[]) => {
+            origLog(...args);
+            const msg = args.join(" ");
+            const durMatch = msg.match(/Video duration:/);
+            if (durMatch) analysisProgress.set(videoId, { step: "Extracting frames…", pct: 15 });
+            const frameMatch = msg.match(/Extracting frame (\d+)\/(\d+)/);
+            if (frameMatch) {
+              framesDone = parseInt(frameMatch[1]);
+              framesTotal = parseInt(frameMatch[2]);
+              const pct = 15 + Math.round((framesDone / framesTotal) * 45);
+              analysisProgress.set(videoId, { step: `Extracting frames… ${framesDone}/${framesTotal}`, pct });
+            }
+            if (msg.includes("Sending") && msg.includes("frames to AI")) {
+              analysisProgress.set(videoId, { step: "AI analyzing footage…", pct: 65 });
+            }
+            if (msg.includes("AI returned")) {
+              analysisProgress.set(videoId, { step: "Saving results…", pct: 95 });
+            }
+          };
+          const results = await analyzeSquashVideoPublic(videoUrl, playerName, playerDescription);
+          console.log = origLog;
+          analysisProgress.set(videoId, { step: "Complete", pct: 100 });
+          await db.updateVideoAnalysis(videoId, { status: "complete", analysisResults: results });
+        } catch (error) {
+          analysisProgress.delete(videoId);
+          await db.updateVideoAnalysis(videoId, {
+            status: "failed",
+            errorMessage: error instanceof Error ? error.message : String(error),
+          });
+        }
+      })();
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
+  // Analysis progress polling endpoint
+  app.get("/api/analysis-progress/:videoId", (req, res) => {
+    const videoId = parseInt(req.params.videoId);
+    const progress = analysisProgress.get(videoId);
+    res.json(progress ?? { step: "Analyzing…", pct: 50 });
+  });
+
+  // ── Multipart S3 upload — splits large videos into parallel chunks ──────────
+  // Step 1: browser calls this to get per-part presigned URLs
+  app.post("/api/presign-multipart", async (req, res) => {
+    try {
+      const { title, playerName, playerDescription, mimeType, fileExt, fileSize } = req.body as {
+        title?: string; playerName?: string; playerDescription?: string;
+        mimeType?: string; fileExt?: string; fileSize?: number;
+      };
+      if (!title) { res.status(400).json({ error: "Title is required" }); return; }
+      const mime = mimeType || "video/mp4";
+      const ext = (fileExt || mime.split("/")[1] || "mp4").replace("quicktime", "mp4");
+      const key = `videos/${Date.now()}-${Math.random().toString(36).substring(7)}.${ext}`;
+
+      // Choose part count so each part is ~10 MB (minimum 5 MB required by S3)
+      const size = fileSize || 100 * 1024 * 1024;
+      const partSize = 10 * 1024 * 1024; // 10 MB per part
+      const partCount = Math.max(1, Math.ceil(size / partSize));
+
+      const { uploadId, publicUrl, partUrls } = await createMultipartUpload(key, mime, partCount);
+
+      let uploadUserId: number | undefined;
+      try { uploadUserId = (await sdk.authenticateRequest(req)).id; } catch { /* anon ok */ }
+
+      const videoId = await db.createVideoAnalysis({
+        title, playerName: playerName || undefined,
+        playerDescription: playerDescription || undefined,
+        videoUrl: publicUrl, userId: uploadUserId, status: "pending",
+      });
+      res.json({ videoId, uploadId, key, videoUrl: publicUrl, partUrls, partSize });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
+  // Step 2: browser calls this after all parts are uploaded
+  app.post("/api/complete-multipart", async (req, res) => {
+    try {
+      const { key, uploadId, parts } = req.body as {
+        key: string;
+        uploadId: string;
+        parts: { PartNumber: number; ETag: string }[];
+      };
+      await completeMultipartUpload(key, uploadId, parts);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
+  // Abort multipart on error
+  app.post("/api/abort-multipart", async (req, res) => {
+    try {
+      const { key, uploadId } = req.body as { key: string; uploadId: string };
+      await abortMultipartUpload(key, uploadId);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
   // ── Multipart video upload endpoint ──────────────────────────────────────
   // Uses multer DISK storage so large video files are streamed to a temp
   // directory rather than buffered entirely in RAM. This avoids OOM errors
   // for videos that are hundreds of MB.
-  const uploadTmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "squash-upload-"));
+  // Use /var/tmp (backed by main disk, 16 GB+) instead of /tmp (tmpfs, 459 MB)
+  // so large video uploads don't hit ENOSPC before they reach S3.
+  const uploadTmpBase = fs.existsSync("/var/tmp") ? "/var/tmp" : os.tmpdir();
+  const uploadTmpDir = fs.mkdtempSync(path.join(uploadTmpBase, "squash-upload-"));
   const upload = multer({
     storage: multer.diskStorage({
       destination: (_req, _file, cb) => cb(null, uploadTmpDir),

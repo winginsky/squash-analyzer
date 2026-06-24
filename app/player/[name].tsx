@@ -45,12 +45,14 @@ type AnalysisResults = {
   performanceScore?: number;
   performanceGrade?: string;
   gameStats?: {
-    forehand?: { total?: number };
-    backhand?: { total?: number };
     lob?: { total?: number };
     drop?: { total?: number };
     drive?: { total?: number };
     boast?: { total?: number };
+    volleyDrop?: { total?: number };
+    volleyDrive?: { total?: number };
+    volleyBoast?: { total?: number };
+    volleyCross?: { total?: number };
     serve?: { total?: number };
     totalShots?: number;
     totalRallies?: number;
@@ -142,7 +144,7 @@ export default function PlayerDetailScreen() {
     const improvement = sessions.length >= 2 ? latestSession.score - firstSession.score : null;
 
     // Aggregate game stats
-    const shotKeys = ["forehand", "backhand", "lob", "drop", "drive", "boast", "serve"] as const;
+    const shotKeys = ["drive", "drop", "lob", "boast", "volleyDrop", "volleyDrive", "volleyBoast", "volleyCross", "serve"] as const;
     const shotTotals: Record<string, number> = {};
     let totalShots = 0, totalRallies = 0, rallyCount = 0, avgRallySum = 0;
     sessions.forEach((s) => {
@@ -160,9 +162,12 @@ export default function PlayerDetailScreen() {
     const avgRallyLength = rallyCount ? +(avgRallySum / rallyCount).toFixed(1) : null;
 
     // Most common weaknesses across all sessions
+    // Filter out any suggestions that use vague/opinionated language from old analyses
+    const VAGUE_TITLE_WORDS = /telegraphed|predictable|readable|obvious|over-reliance|flat-footed|weak|poor/i;
     const weaknessMap = new Map<string, number>();
     sessions.forEach((s) => {
       (s.analysis.suggestions ?? []).forEach((sg) => {
+        if (VAGUE_TITLE_WORDS.test(sg.title)) return; // skip old opinionated entries
         weaknessMap.set(sg.title, (weaknessMap.get(sg.title) ?? 0) + (sg.occurrenceCount ?? 1));
       });
     });
@@ -198,10 +203,16 @@ export default function PlayerDetailScreen() {
     : "?";
 
   // ── Shot distribution ─────────────────────────────────────────────────────
-  const shotKeys = ["forehand", "backhand", "lob", "drop", "drive", "boast", "serve"] as const;
+  const shotKeys = ["drive", "drop", "lob", "boast", "volleyDrop", "volleyDrive", "volleyBoast", "volleyCross", "serve"] as const;
+  const shotLabels: Record<string, string> = {
+    drive: "Drive", drop: "Drop", lob: "Lob", boast: "Boast",
+    volleyDrop: "Volley Drop", volleyDrive: "Volley Drive",
+    volleyBoast: "Volley Boast", volleyCross: "Volley Cross", serve: "Serve",
+  };
   const shotColors: Record<string, string> = {
-    forehand: "#0a7ea4", backhand: "#7C3AED", lob: "#059669",
-    drop: "#D97706", drive: "#DB2777", boast: "#DC2626", serve: "#687076",
+    drive: "#DB2777", drop: "#D97706", lob: "#059669", boast: "#DC2626",
+    volleyDrop: "#0a7ea4", volleyDrive: "#7C3AED", volleyBoast: "#0891B2", volleyCross: "#4F46E5",
+    serve: "#687076",
   };
 
   if (isLoading) {
@@ -410,7 +421,7 @@ export default function PlayerDetailScreen() {
                         return (
                           <View key={k} style={{ marginBottom: 10 }}>
                             <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 4 }}>
-                              <Text style={{ fontSize: 12, fontWeight: "600", color: colors.foreground, textTransform: "capitalize" }}>{k}</Text>
+                              <Text style={{ fontSize: 12, fontWeight: "600", color: colors.foreground }}>{shotLabels[k] ?? k}</Text>
                               <Text style={{ fontSize: 12, color: colors.muted }}>{count} ({pct.toFixed(0)}%)</Text>
                             </View>
                             <View style={{ height: 8, backgroundColor: colors.border, borderRadius: 4, overflow: "hidden" }}>

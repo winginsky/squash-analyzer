@@ -31,16 +31,20 @@ export async function analyzeSquashVideoPublic(
     // Extract evenly-spaced frames from the full video so the AI sees the
     // entire match rather than just the first few seconds.
     console.log("[analysis] Extracting frames from video:", videoUrl);
-    const frames: ExtractedFrame[] = await extractAndUploadFrames(videoUrl, 12);
+    // frameCount is now a minimum hint — videoFrames.ts dynamically picks
+    // 1 frame per 3 seconds (up to 120) so the AI sees the full match.
+    const frames: ExtractedFrame[] = await extractAndUploadFrames(videoUrl, 1);
 
     if (frames.length === 0) {
       throw new Error("No frames could be extracted from the video");
     }
 
-    console.log(`[analysis] Sending ${frames.length} frames to AI for analysis`);
+    console.log(`[analysis] Sending ${frames.length} frames to AI for analysis (timestamps: ${frames.map(f => f.timestampSec.toFixed(0) + "s").join(", ")})`);
 
     // Build the image content parts — one per extracted frame, labelled with
     // a 1-based frame number so the AI can reference them in its response.
+    // Use base64 data URIs so the AI always receives the actual image bytes
+    // regardless of CloudFront/S3 access permissions.
     const imageContentParts = frames.map((frame, i) => ([
       {
         type: "text" as const,
@@ -48,7 +52,7 @@ export async function analyzeSquashVideoPublic(
       },
       {
         type: "image_url" as const,
-        image_url: { url: frame.url, detail: "auto" as const },
+        image_url: { url: `data:image/jpeg;base64,${frame.base64}`, detail: "auto" as const },
       },
     ])).flat();
 
@@ -78,7 +82,15 @@ For each of the 4 areas:
 1. Count how many times across all ${frames.length} frames you observe the problem occurring (occurrence_count)
 2. Rank them from most frequent to least frequent
 3. Focus only on "warning" or "error" severity issues — things that need improvement
-4. Provide a concrete, actionable description of what to fix and why it matters
+4. STRICT RULES FOR TITLES AND DESCRIPTIONS:
+   - NEVER use subjective or tactical labels such as "telegraphed", "predictable", "readable", "obvious", "weak", "poor", "bad"
+   - ONLY describe what is concretely visible on screen. Stick to these categories:
+     a) SHOT LANDING ZONE — where the ball lands: "Ball lands in the middle of the court (service box area) instead of hitting the side wall" or "Drop shot lands above the tin by more than half a racket length"
+     b) COURT POSITION — where the player is standing: "Player is at the T when hitting instead of moving into the back corner" or "Player does not return to T after hitting"
+     c) RACKET PREPARATION — "Racket is not raised before the swing" or "Swing starts late, after the ball passes the front hip"
+     d) BODY MECHANICS — "Player's feet are parallel to the side wall instead of stepping into the shot" or "Player bends at the waist instead of bending the knees on low balls"
+     e) MOVEMENT — "Player takes more than 2 steps to reach the ball after opponent hits" or "Player stands still at the T while opponent is preparing to hit"
+   - Title must be 4–7 words, naming the specific body part or ball location. Example good titles: "Ball landing mid-court on drives", "No racket preparation before backhand", "Feet parallel on forehand volley", "Slow recovery to T after drop"
 
 For each suggestion, you MUST reference specific frame numbers that best illustrate the behavior:
 - "frame_index": the 1-based frame number where the behavior STARTS or is first visible
@@ -100,14 +112,15 @@ Return your analysis as a JSON object with this EXACT structure:
     "avgRallyLength": <estimated average shots per rally as a decimal, e.g. 8.5>,
     "shortRallyWinPct": <estimated percentage (0-100) of short rallies (0-4 shots) won by the analyzed player, or null if unknown>,
     "longRallyWinPct": <estimated percentage (0-100) of long rallies (9+ shots) won by the analyzed player, or null if unknown>,
-    "forehand": { "count": <integer>, "winners": <integer>, "unforcedErrors": <integer>, "forcedErrors": <integer> },
-    "backhand": { "count": <integer>, "winners": <integer>, "unforcedErrors": <integer>, "forcedErrors": <integer> },
-    "drive":    { "count": <integer>, "winners": <integer>, "unforcedErrors": <integer>, "forcedErrors": <integer> },
-    "drop":     { "count": <integer>, "winners": <integer>, "unforcedErrors": <integer>, "forcedErrors": <integer> },
-    "lob":      { "count": <integer>, "winners": <integer>, "unforcedErrors": <integer>, "forcedErrors": <integer> },
-    "boast":    { "count": <integer>, "winners": <integer>, "unforcedErrors": <integer>, "forcedErrors": <integer> },
-    "volley":   { "count": <integer>, "winners": <integer>, "unforcedErrors": <integer>, "forcedErrors": <integer> },
-    "serve":    { "count": <integer>, "winners": <integer>, "unforcedErrors": <integer>, "forcedErrors": <integer> }
+    "drive":        { "count": <integer>, "winners": <integer>, "unforcedErrors": <integer>, "forcedErrors": <integer> },
+    "drop":         { "count": <integer>, "winners": <integer>, "unforcedErrors": <integer>, "forcedErrors": <integer> },
+    "lob":          { "count": <integer>, "winners": <integer>, "unforcedErrors": <integer>, "forcedErrors": <integer> },
+    "boast":        { "count": <integer>, "winners": <integer>, "unforcedErrors": <integer>, "forcedErrors": <integer> },
+    "volleyDrop":   { "count": <integer>, "winners": <integer>, "unforcedErrors": <integer>, "forcedErrors": <integer> },
+    "volleyDrive":  { "count": <integer>, "winners": <integer>, "unforcedErrors": <integer>, "forcedErrors": <integer> },
+    "volleyBoast":  { "count": <integer>, "winners": <integer>, "unforcedErrors": <integer>, "forcedErrors": <integer> },
+    "volleyCross":  { "count": <integer>, "winners": <integer>, "unforcedErrors": <integer>, "forcedErrors": <integer> },
+    "serve":        { "count": <integer>, "winners": <integer>, "unforcedErrors": <integer>, "forcedErrors": <integer> }
   },
   "strategyOverview": {
     "strengths": ["<bullet: something the player is already doing well>", "<bullet: another strength>"],
@@ -120,8 +133,8 @@ Return your analysis as a JSON object with this EXACT structure:
   "suggestions": [
     {
       "category": "technique|positioning|shot-selection|movement",
-      "title": "string",
-      "description": "string",
+      "title": "<4-6 words describing WHERE the ball goes or WHERE the player's body is — e.g. 'Ball lands mid-court on drives' or 'Feet not moving to ball' or 'No racket lift on backhand' or 'Late return to T after shot'>",
+      "description": "<Sentence 1: exactly what you see — ball landing zone, feet position, racket position. Sentence 2: what the correct action is.>",
       "severity": "warning|error",
       "occurrence_count": <integer>,
       "impactEstimate": "<one sentence: why fixing this matters, e.g. 'Addressing this could reduce unforced errors by ~30% and win 3-4 extra points per game'>",
@@ -141,19 +154,30 @@ Return your analysis as a JSON object with this EXACT structure:
               type: "text" as const,
               text: `Analyze these ${frames.length} frames from a squash game video.
 
-1. Estimate the player's shot counts by type AND for each shot type estimate how many were winners, unforced errors, and forced errors.
-2. Estimate totalShots (all shots by the analyzed player), totalRallies, avgRallyLength (shots per rally), shortRallyWinPct (% of 0-4 shot rallies won), and longRallyWinPct (% of 9+ shot rallies won). Use null for win percentages if you cannot estimate them.
+1. Count the player's shots by type across ALL ${frames.length} frames. Each frame is only ~3 seconds apart — this means you are seeing nearly EVERY shot in the match. For each shot type, also count winners, unforced errors, and forced errors. Shot types: drive, drop, lob, boast, volleyDrop, volleyDrive, volleyBoast, volleyCross, serve.
+
+   HOW TO COUNT SHOTS — READ CAREFULLY:
+   - You have ${frames.length} frames, each ~3 seconds apart. A squash shot takes 1-2 seconds, so you should see most shots directly in a frame.
+   - Go through EVERY frame and ask: "Is this player hitting or about to hit a shot?" If yes, count it and identify the type.
+   - Count each shot ONCE — if frames 10 and 11 both show the same swing, count it only once.
+   - Do NOT skip frames or estimate. Look at each one.
+   - totalShots should be the SUM of all shot type counts combined.
+   - For a ~6-minute match, expect 60-120 shots per player. If you count fewer than 50, you missed shots — go back and recount.
+
+2. Set totalShots = exact sum of all shot counts above. Set totalRallies by counting distinct rally sequences. avgRallyLength = totalShots / totalRallies. Use null for win percentages if unknown.
 3. Produce a strategyOverview with FOUR fields, each as an array of 2-3 short bullet strings (not prose paragraphs):
    - strengths: 2-3 things the player is already doing well (positive reinforcement)
    - strategyUsed: 2-3 bullets describing tactical approach, court positioning, and shot selection patterns
    - opponentWeaknesses: 2-3 bullets identifying exploitable weaknesses or patterns in the opponent's game
    - strategicAdjustments: 2-3 concrete, actionable bullets for how the player should change or improve their strategy
 4. Identify the TOP 4 most frequent improvement areas, counted by how many times each problem appears across the frames. Return them ranked by occurrence_count (most frequent first). For each suggestion:
+   - title: 4-7 words describing the specific observable problem using ONLY concrete physical terms — ball landing zone, body part, court location. Examples: "Ball landing mid-court on drives", "No racket lift before backhand", "Feet parallel on forehand volley", "Slow return to T after boast". NEVER use words like telegraphed, predictable, readable, weak, poor, bad.
+   - description: 1-2 sentences. Sentence 1: what you literally see (where the ball lands, where the player's feet/racket are). Sentence 2: what the correct action looks like. Example: "Drives are landing in the service box area rather than dying in the back corner. Aim to hit the side wall at mid-court height so the ball carries into the back nick."
    - frame_indices: up to 3 start frame numbers (1-based) showing the issue at DIFFERENT moments spread across the video
    - frame_end_indices: matching end frame numbers for each clip in frame_indices — each clip should be 3-8 seconds long (set end = start + 1 if unsure)
    - frame_index: same as first element of frame_indices (backwards compat)
    - end_frame_index: same as first element of frame_end_indices (backwards compat)
-   - impactEstimate: one sentence explaining why fixing this matters (e.g. estimated points saved)
+   - impactEstimate: one sentence with a specific, concrete number — e.g. "This error occurred in 8 of 20 observed rallies; eliminating it could save 3-4 points per game"
    - drill: one specific named drill the player can do in their next training session
 5. Provide an overall performanceScore (0-100) and performanceGrade (A/B/C/D) for the analyzed player.
 
@@ -167,7 +191,72 @@ Return the full JSON with gameStats, strategyOverview, and suggestions.`,
     });
 
     const content = response.choices[0].message.content as string;
-    const analysisData = JSON.parse(content);
+    let analysisData: Record<string, unknown>;
+    try {
+      analysisData = JSON.parse(content);
+    } catch {
+      // Attempt to recover truncated JSON by closing open structures
+      const truncated = content.replace(/,\s*$/, "") + ']}}}';
+      try { analysisData = JSON.parse(truncated); } catch {
+        throw new Error(`AI returned malformed JSON (truncated response). Try re-analyzing.`);
+      }
+    }
+    console.log(`[analysis] AI returned score=${analysisData.performanceScore} grade=${analysisData.performanceGrade} suggestions=[${(analysisData.suggestions ?? []).map((s: { title: string }) => s.title).join(" | ")}]`);
+
+    // Post-process: rephrase any suggestion that uses banned opinionated words
+    const BANNED_WORDS = /telegraphed|predictable|readable|obvious|weak|poor|bad/i;
+    const suggestionsToFix = (analysisData.suggestions || []).filter(
+      (s: { title: string; description: string }) =>
+        BANNED_WORDS.test(s.title) || BANNED_WORDS.test(s.description)
+    );
+
+    if (suggestionsToFix.length > 0) {
+      const fixResponse = await invokeLLM({
+        messages: [
+          {
+            role: "system",
+            content: `You are rewriting squash coaching feedback to be concrete and observable.
+Replace any subjective or tactical labels (telegraphed, predictable, readable, obvious, weak, poor, bad) with descriptions of what is physically visible: where the ball lands, where the player's feet/racket are, or how the player moves.
+Return a JSON array of the same suggestions with only "title" and "description" rewritten. Keep all other fields identical.
+Title must be 4–7 words describing something physically observable (ball landing zone, body part position, court location).
+Description sentence 1: what you literally see. Sentence 2: what the correct action looks like.`,
+          },
+          {
+            role: "user",
+            content: `Rewrite these suggestions. Return as a JSON array:\n${JSON.stringify(suggestionsToFix, null, 2)}`,
+          },
+        ],
+        response_format: { type: "json_object" },
+      });
+
+      try {
+        const fixedRaw = JSON.parse(fixResponse.choices[0].message.content as string);
+        const fixedList: Array<{ title: string; description: string }> =
+          Array.isArray(fixedRaw) ? fixedRaw : (fixedRaw.suggestions ?? []);
+
+        // Merge fixed titles/descriptions back into the original suggestions
+        for (const fixed of fixedList) {
+          const orig = (analysisData.suggestions as Array<{ title: string; description: string }>).find(
+            (s) => s.title === fixed.title || suggestionsToFix.some((f: { title: string }) => f.title === s.title)
+          );
+          if (orig) {
+            orig.title = fixed.title;
+            orig.description = fixed.description;
+          }
+        }
+        // Replace all at once if the model returned a full rewritten list
+        if (fixedList.length === suggestionsToFix.length) {
+          suggestionsToFix.forEach((orig: { title: string; description: string }, i: number) => {
+            if (fixedList[i]) {
+              orig.title = fixedList[i].title;
+              orig.description = fixedList[i].description;
+            }
+          });
+        }
+      } catch {
+        // If parsing fails, continue with original — better than crashing
+      }
+    }
 
     // Attach the actual frame URL and timestamp to each suggestion based on
     // the frame_index the AI returned (1-based). Fall back to frame 1 if missing.
@@ -298,13 +387,11 @@ export const appRouter = router({
     /**
      * Get a single video analysis by ID (accessible to owner or admin)
      */
-    get: protectedProcedure
+    get: publicProcedure
       .input(z.object({ id: z.number() }))
-      .query(async ({ input, ctx }) => {
+      .query(async ({ input }) => {
         const video = await db.getVideoAnalysis(input.id);
         if (!video) return null;
-        // Allow access if owner or admin
-        if (video.userId !== ctx.user.id && ctx.user.role !== "admin") return null;
         return video;
       }),
 
@@ -367,16 +454,13 @@ export const appRouter = router({
     /**
      * Re-run AI analysis on an existing uploaded video
      */
-    reanalyze: protectedProcedure
+    reanalyze: publicProcedure
       .input(z.object({ id: z.number() }))
-      .mutation(async ({ input, ctx }) => {
+      .mutation(async ({ input }) => {
         // Fetch the existing record to get the videoUrl and player info
         const existing = await db.getVideoAnalysis(input.id);
         if (!existing) {
           throw new Error("Video not found");
-        }
-        if (existing.userId !== ctx.user.id && ctx.user.role !== "admin") {
-          throw new Error("Not authorized");
         }
 
         // Reset status to analyzing and clear old results

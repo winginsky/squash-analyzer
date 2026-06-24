@@ -154,17 +154,21 @@ type GameStats = {
   shortRallyWinPct?: number | null;
   longRallyWinPct?: number | null;
   // Shot type breakdown — new format (object) or legacy (number)
-  forehand?: ShotStat | number | null;
-  backhand?: ShotStat | number | null;
-  drive?:    ShotStat | number | null;
-  drop?:     ShotStat | number | null;
-  lob?:      ShotStat | number | null;
-  boast?:    ShotStat | number | null;
-  volley?:   ShotStat | number | null;
-  serve?:    ShotStat | number | null;
+  forehand?:    ShotStat | number | null; // legacy
+  backhand?:    ShotStat | number | null; // legacy
+  volley?:      ShotStat | number | null; // legacy
+  drive?:       ShotStat | number | null;
+  drop?:        ShotStat | number | null;
+  lob?:         ShotStat | number | null;
+  boast?:       ShotStat | number | null;
+  volleyDrop?:  ShotStat | number | null;
+  volleyDrive?: ShotStat | number | null;
+  volleyBoast?: ShotStat | number | null;
+  volleyCross?: ShotStat | number | null;
+  serve?:       ShotStat | number | null;
 };
 
-type ShotKey = "forehand" | "backhand" | "drive" | "drop" | "lob" | "boast" | "volley" | "serve";
+type ShotKey = "drive" | "drop" | "lob" | "boast" | "volleyDrop" | "volleyDrive" | "volleyBoast" | "volleyCross" | "serve";
 
 /** Normalise a shot stat field — handles both new object format and legacy number */
 function normaliseShotStat(val: ShotStat | number | null | undefined): ShotStat | null {
@@ -175,14 +179,15 @@ function normaliseShotStat(val: ShotStat | number | null | undefined): ShotStat 
 }
 
 const STAT_ITEMS: { key: ShotKey; label: string; matIcon: string }[] = [
-  { key: "forehand",  label: "Forehand",  matIcon: "sports-tennis" },
-  { key: "backhand",  label: "Backhand",  matIcon: "flip" },
-  { key: "drive",     label: "Drive",     matIcon: "arrow-forward" },
-  { key: "drop",      label: "Drop",      matIcon: "arrow-downward" },
-  { key: "lob",       label: "Lob",       matIcon: "arrow-upward" },
-  { key: "boast",     label: "Boast",     matIcon: "call-made" },
-  { key: "volley",    label: "Volley",    matIcon: "bolt" },
-  { key: "serve",     label: "Serve",     matIcon: "sports" },
+  { key: "drive",       label: "Drive",          matIcon: "arrow-forward" },
+  { key: "drop",        label: "Drop",           matIcon: "arrow-downward" },
+  { key: "lob",         label: "Lob",            matIcon: "arrow-upward" },
+  { key: "boast",       label: "Boast",          matIcon: "call-made" },
+  { key: "volleyDrop",  label: "Volley Drop",    matIcon: "bolt" },
+  { key: "volleyDrive", label: "Volley Drive",   matIcon: "bolt" },
+  { key: "volleyBoast", label: "Volley Boast",   matIcon: "bolt" },
+  { key: "volleyCross", label: "Volley Cross",   matIcon: "bolt" },
+  { key: "serve",       label: "Serve",          matIcon: "sports" },
 ];
 
 type FrameSnapshot = {

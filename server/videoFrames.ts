@@ -27,6 +27,8 @@ export interface ExtractedFrame {
   index: number;
   /** Public S3 URL of the JPEG image */
   url: string;
+  /** Base64-encoded JPEG data for passing directly to AI (avoids CloudFront auth issues) */
+  base64: string;
   /** Timestamp in seconds within the video where this frame was taken */
   timestampSec: number;
 }
@@ -107,8 +109,11 @@ export async function extractAndUploadFrames(
     return extractFramesFromLocalFile(videoSource, frameCount);
   }
 
-  // For URL sources: stream-download to a temp file, then extract frames
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "squash-frames-"));
+  // For URL sources: stream-download to a temp file, then extract frames.
+  // Use /var/tmp (backed by main disk, 16GB+) instead of /tmp (tmpfs, only 459MB)
+  // so large video files don't hit ENOSPC.
+  const tmpBase = fs.existsSync("/var/tmp") ? "/var/tmp" : os.tmpdir();
+  const tmpDir = fs.mkdtempSync(path.join(tmpBase, "squash-frames-"));
   const videoPath = path.join(tmpDir, "video.mp4");
   try {
     console.log(`[frames] Streaming download from ${videoSource}`);
@@ -130,7 +135,8 @@ async function extractFramesFromLocalFile(
   videoPath: string,
   frameCount: number,
 ): Promise<ExtractedFrame[]> {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "squash-frames-"));
+  const tmpBase = fs.existsSync("/var/tmp") ? "/var/tmp" : os.tmpdir();
+  const tmpDir = fs.mkdtempSync(path.join(tmpBase, "squash-frames-"));
   try {
     const duration = await getVideoDuration(videoPath);
     console.log(`[frames] Video duration: ${duration.toFixed(1)}s`);
@@ -138,34 +144,51 @@ async function extractFramesFromLocalFile(
       throw new Error("Could not determine video duration");
     }
 
-    // Place frames at evenly-spaced intervals, avoiding the very start/end.
-    // e.g. for 12 frames in a 150s video: 6.25s, 18.75s, 31.25s, ...
-    const interval = duration / frameCount;
+    // 1 frame every 6 seconds, capped at 60 — covers the full match well.
+    // ffmpeg is extracted SEQUENTIALLY (one at a time) to avoid disk I/O
+    // contention when multiple processes seek the same large video file.
+    const FRAME_INTERVAL_SEC = 8;
+    const MAX_FRAMES = 40;
+    const actualCount = Math.min(MAX_FRAMES, Math.max(frameCount, Math.ceil(duration / FRAME_INTERVAL_SEC)));
+    const interval = duration / actualCount;
     const timestamps = Array.from(
-      { length: frameCount },
+      { length: actualCount },
       (_, i) => interval * (i + 0.5),
     );
 
-    const frames: ExtractedFrame[] = [];
+    // Sequential frame extraction — reliable on all server sizes
+    const framePaths: (string | null)[] = [];
     for (let i = 0; i < timestamps.length; i++) {
       const ts = timestamps[i];
       const framePath = path.join(tmpDir, `frame-${i}.jpg`);
-      console.log(`[frames] Extracting frame ${i + 1}/${frameCount} at ${ts.toFixed(1)}s`);
+      console.log(`[frames] Extracting frame ${i + 1}/${timestamps.length} at ${ts.toFixed(1)}s`);
       await extractFrame(videoPath, ts, framePath);
-
-      if (!fs.existsSync(framePath)) {
-        console.warn(`[frames] Frame ${i + 1} not extracted, skipping`);
-        continue;
-      }
-
-      const frameBuffer = fs.readFileSync(framePath);
-      const uploadKey = `frames/${Date.now()}-frame-${i}.jpg`;
-      const { url } = await storagePut(uploadKey, frameBuffer, "image/jpeg");
-      frames.push({ index: i, url, timestampSec: ts });
+      if (fs.existsSync(framePath)) framePaths.push(framePath);
+      else { console.warn(`[frames] Frame ${i + 1} not extracted, skipping`); framePaths.push(null); }
     }
 
-    console.log(`[frames] Extracted and uploaded ${frames.length} frames`);
-    return frames;
+    // Upload all extracted frames to S3 in parallel (8 at a time)
+    const UPLOAD_CONCURRENCY = 8;
+    const frameResults: ExtractedFrame[] = [];
+    const validFrames = framePaths
+      .map((p, i) => ({ path: p, ts: timestamps[i], idx: i }))
+      .filter(f => f.path !== null);
+
+    for (let i = 0; i < validFrames.length; i += UPLOAD_CONCURRENCY) {
+      const batch = validFrames.slice(i, i + UPLOAD_CONCURRENCY);
+      const results = await Promise.all(batch.map(async ({ path: framePath, ts, idx }) => {
+        const frameBuffer = fs.readFileSync(framePath!);
+        const base64 = frameBuffer.toString("base64");
+        const uploadKey = `frames/${Date.now()}-frame-${idx}.jpg`;
+        const { url } = await storagePut(uploadKey, frameBuffer, "image/jpeg");
+        return { index: idx, url, base64, timestampSec: ts } as ExtractedFrame;
+      }));
+      frameResults.push(...results);
+    }
+
+    frameResults.sort((a, b) => a.index - b.index);
+    console.log(`[frames] Extracted and uploaded ${frameResults.length} frames`);
+    return frameResults;
   } finally {
     try {
       fs.rmSync(tmpDir, { recursive: true, force: true });
