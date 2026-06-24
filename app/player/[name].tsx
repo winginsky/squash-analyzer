@@ -16,6 +16,7 @@ import {
   Dimensions,
   ActivityIndicator,
   Alert,
+  Platform,
 } from "react-native";
 import { useLocalSearchParams, router } from "expo-router";
 import { trpc } from "@/lib/trpc";
@@ -88,6 +89,12 @@ export default function PlayerDetailScreen() {
   const { data: videosData, isLoading, refetch } = trpc.videos.list.useQuery();
   const deleteVideo = trpc.videos.delete.useMutation({ onSuccess: () => refetch() });
   const handleDeleteFailed = (id: number, title: string) => {
+    if (Platform.OS === "web") {
+      if (window.confirm(`Delete "${title}"? This cannot be undone.`)) {
+        deleteVideo.mutate({ id });
+      }
+      return;
+    }
     Alert.alert(
       "Delete Session",
       `Delete "${title}"? This cannot be undone.`,

@@ -11,10 +11,14 @@ export const users = mysqlTable("users", {
    * Use this for relations between tables.
    */
   id: int("id").autoincrement().primaryKey(),
-  /** Manus OAuth identifier (openId) returned from the OAuth callback. Unique per user. */
-  openId: varchar("openId", { length: 64 }).notNull().unique(),
+  /** OAuth provider identifier (Google sub, etc.). Null for email/password users. */
+  openId: varchar("openId", { length: 128 }).unique(),
   name: text("name"),
-  email: varchar("email", { length: 320 }),
+  email: varchar("email", { length: 320 }).unique(),
+  /** URL to the user's profile photo (from Google OAuth etc.) */
+  avatarUrl: text("avatarUrl"),
+  /** Bcrypt hash for email/password users. Null for OAuth-only users. */
+  passwordHash: varchar("passwordHash", { length: 255 }),
   loginMethod: varchar("loginMethod", { length: 64 }),
   role: mysqlEnum("role", ["user", "coach", "admin"]).default("user").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -50,6 +54,8 @@ export const videoAnalyses = mysqlTable("video_analyses", {
   errorMessage: text("errorMessage"),
   /** Coach-entered structured analysis notes (same format as AI analysisResults) */
   coachNotes: json("coachNotes"),
+  /** Raw meeting notes text uploaded at submission time (AI-transcribed coach commentary) */
+  meetingNotes: text("meetingNotes"),
   /** Random token for generating shareable public links */
   shareToken: varchar("shareToken", { length: 64 }),
   /** Timestamp when the video was uploaded */
@@ -78,3 +84,28 @@ export const suggestionFeedback = mysqlTable("suggestion_feedback", {
 });
 export type SuggestionFeedback = typeof suggestionFeedback.$inferSelect;
 export type InsertSuggestionFeedback = typeof suggestionFeedback.$inferInsert;
+
+/**
+ * Per-player coaching profiles.
+ * Accumulated from coach meeting notes across multiple sessions.
+ * Used to inject prior coaching context into future LLM analyses.
+ */
+export const playerProfiles = mysqlTable("player_profiles", {
+  id: int("id").autoincrement().primaryKey(),
+  /** Canonical player name (case-insensitive match used at query time) */
+  playerName: varchar("playerName", { length: 255 }).notNull().unique(),
+  /**
+   * Accumulated coaching profile in Markdown format.
+   * Synthesized by the LLM from coach meeting notes after each session.
+   * Injected into future analysis prompts for this player.
+   */
+  coachingProfile: text("coachingProfile"),
+  /** Number of sessions that have contributed to this profile */
+  sessionCount: int("sessionCount").default(0).notNull(),
+  /** Timestamp of the last profile update */
+  lastUpdatedAt: timestamp("lastUpdatedAt").defaultNow().onUpdateNow().notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type PlayerProfile = typeof playerProfiles.$inferSelect;
+export type InsertPlayerProfile = typeof playerProfiles.$inferInsert;

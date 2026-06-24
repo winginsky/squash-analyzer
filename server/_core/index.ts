@@ -1,5 +1,6 @@
 import "dotenv/config";
 import express from "express";
+import cookieParser from "cookie-parser";
 import { createServer } from "http";
 import net from "net";
 import multer from "multer";
@@ -7,13 +8,21 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
-import { registerOAuthRoutes } from "./oauth";
 import { appRouter, analyzeSquashVideoPublic } from "../routers";
 import { createContext } from "./context";
 import { storagePut, storagePutFile, getPresignedUploadUrl, createMultipartUpload, completeMultipartUpload, abortMultipartUpload } from "../storage";
 import { sdk } from "./sdk";
 import * as db from "../db";
 import { downloadVideoFromUrl, validateVideoUrl, detectVideoSource } from "../videoUrl";
+import {
+  handleRegister,
+  handleLogin,
+  handleGoogleLogin,
+  handleGoogleCallback,
+  handleLogout,
+  handleMe,
+  authenticateRequest,
+} from "./auth";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise((resolve) => {
@@ -61,8 +70,15 @@ async function startServer() {
 
   app.use(express.json({ limit: "200mb" }));
   app.use(express.urlencoded({ limit: "200mb", extended: true }));
+  app.use(cookieParser());
 
-  registerOAuthRoutes(app);
+  // ── Auth routes ──────────────────────────────────────────────────────────
+  app.post("/api/auth/register", handleRegister);
+  app.post("/api/auth/login", handleLogin);
+  app.post("/api/auth/logout", handleLogout);
+  app.get("/api/auth/me", handleMe);
+  app.get("/api/auth/google", handleGoogleLogin);
+  app.get("/api/auth/google/callback", handleGoogleCallback);
 
   app.get("/api/health", (_req, res) => {
     res.json({ ok: true, timestamp: Date.now() });
@@ -435,6 +451,45 @@ async function startServer() {
     }),
   );
 
+  /**
+   * Internal admin endpoint: trigger (or re-trigger) analysis for a video by ID.
+   * Protected by JWT_SECRET in the x-internal-secret header.
+   * Only intended to be called from localhost / SSH tunnel.
+   */
+  app.post("/api/internal/trigger-analysis", express.json(), async (req, res) => {
+    const { ENV } = await import("./env.js");
+    if (!ENV.jwtSecret || req.headers["x-internal-secret"] !== ENV.jwtSecret) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
+    const videoId = Number(req.body?.videoId);
+    if (!videoId) {
+      res.status(400).json({ error: "videoId required" });
+      return;
+    }
+    const video = await db.getVideoAnalysis(videoId);
+    if (!video) {
+      res.status(404).json({ error: "Video not found" });
+      return;
+    }
+    // Reset status and kick off async analysis
+    await db.updateVideoAnalysis(videoId, { status: "analyzing", analysisResults: null, errorMessage: null });
+    res.json({ success: true, videoId, status: "analyzing" });
+
+    // Run analysis in background
+    analyzeSquashVideoPublic(
+      video.videoUrl,
+      video.playerName ?? undefined,
+      video.playerDescription ?? undefined,
+      (video.coachNotes as Parameters<typeof analyzeSquashVideoPublic>[3]) ?? null,
+    )
+      .then((results) => db.updateVideoAnalysis(videoId, { status: "complete", analysisResults: results }))
+      .catch((err: Error) => {
+        console.error(`[internal] Analysis failed for video ${videoId}:`, err.message);
+        db.updateVideoAnalysis(videoId, { status: "failed", errorMessage: err.message });
+      });
+  });
+
   const preferredPort = parseInt(process.env.PORT || "3000");
 
   // Always bind to the preferred port. If it is occupied (e.g. by a stale
@@ -445,6 +500,14 @@ async function startServer() {
     const tryListen = (attemptsLeft: number) => {
       server.listen(preferredPort, () => {
         console.log(`[api] server listening on port ${preferredPort}`);
+        // Reset any zombie jobs left over from a previous crash/restart
+        db.resetZombieJobs().then((count) => {
+          if (count > 0) {
+            console.log(`[api] Reset ${count} zombie job(s) stuck in analyzing/pending state`);
+          }
+        }).catch((err) => {
+          console.warn("[api] Failed to reset zombie jobs:", err);
+        });
         resolve();
       });
       server.once("error", (err: NodeJS.ErrnoException) => {

@@ -536,7 +536,7 @@ export default function VideoDetailScreen() {
     const score = results?.performanceScore ?? "?";
     const topDrill = suggestions[0]?.drill ? `\n🎯 Top drill: ${suggestions[0].drill}` : "";
     const topArea = suggestions[0]?.title ? `\n📌 Top improvement: ${suggestions[0].title}` : "";
-    const message = `🏸 ${title}\n${player}\n\nPerformance: ${grade} (${score}/100)${topArea}${topDrill}\n\nAnalyzed with Squash Analyzer`;
+    const message = `🏸 ${title}\n${player}\n\nPerformance: ${grade} (${score}/100)${topArea}${topDrill}\n\nAnalyzed with SMARTSQUASH`;
     if (Platform.OS === "web") {
       if (typeof navigator !== "undefined" && (navigator as any).share) {
         try { await (navigator as any).share({ title, text: message }); } catch { /* user cancelled */ }
@@ -600,6 +600,10 @@ export default function VideoDetailScreen() {
     const r = videoData.analysisResults as { performanceGrade?: string };
     return r.performanceGrade ?? null;
   }, [videoData]);
+
+  // ─── Meeting Notes ──────────────────────────────────────────────────────────────────
+  const [meetingNotesExpanded, setMeetingNotesExpanded] = useState(false);
+  const meetingNotes: string | null = (videoData as any)?.meetingNotes ?? null;
 
   // ─── Coach Notes ────────────────────────────────────────────────────────────────────
   type CoachNotes = {
@@ -1242,10 +1246,10 @@ export default function VideoDetailScreen() {
                       borderRadius: 16,
                       borderLeftWidth: 4,
                       borderLeftColor: style.border,
-                      backgroundColor: style.bg,
+                      backgroundColor: colors.surface,
                       padding: 16,
                       borderWidth: 1,
-                      borderColor: colors.border,
+                      borderColor: style.border + "55",
                     }}
                   >
                     {/* Rank + occurrence count row */}
@@ -1400,6 +1404,57 @@ export default function VideoDetailScreen() {
               })}
             </View>
           )}
+        {/* ─── Meeting Notes Section (shown to all if present) ─────────── */}
+        {meetingNotes && (
+          <View style={{ marginHorizontal: 16, marginTop: 24, marginBottom: 8 }}>
+            <TouchableOpacity
+              onPress={() => setMeetingNotesExpanded(v => !v)}
+              style={{
+                flexDirection: "row", alignItems: "center",
+                backgroundColor: colors.surface,
+                borderRadius: 14, padding: 16,
+                borderWidth: 1, borderColor: colors.border,
+              }}
+            >
+              <View style={{
+                width: 36, height: 36, borderRadius: 18,
+                backgroundColor: "rgba(59,130,246,0.12)",
+                alignItems: "center", justifyContent: "center", marginRight: 12,
+              }}>
+                <MaterialIcons name="mic" size={20} color="#3B82F6" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 16, fontWeight: "700", color: colors.foreground }}>Coach Meeting Notes</Text>
+                <Text style={{ fontSize: 12, color: colors.muted, marginTop: 1 }}>
+                  {meetingNotes.trim().split(/\s+/).length} words · uploaded with this video
+                </Text>
+              </View>
+              <MaterialIcons
+                name={meetingNotesExpanded ? "expand-less" : "expand-more"}
+                size={22} color={colors.muted}
+              />
+            </TouchableOpacity>
+
+            {meetingNotesExpanded && (
+              <View style={{
+                backgroundColor: "rgba(59,130,246,0.04)",
+                borderRadius: 14, padding: 16,
+                borderWidth: 1, borderColor: "rgba(59,130,246,0.2)",
+                borderTopWidth: 0, borderTopLeftRadius: 0, borderTopRightRadius: 0,
+                marginTop: -2,
+              }}>
+                <Text style={{
+                  fontSize: 13, color: colors.foreground,
+                  lineHeight: 22, fontFamily: Platform.OS === "web" ? "monospace" : undefined,
+                  whiteSpace: "pre-wrap" as any,
+                }}>
+                  {meetingNotes.trim()}
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
+
         {/* ─── Coach Notes Section (coaches + admins only) ──────────────── */}
         {isCoachOrAdmin && <View style={{ marginHorizontal: 16, marginTop: 24, marginBottom: 8 }}>
           {/* Header row */}

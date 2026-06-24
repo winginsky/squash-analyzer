@@ -1,14 +1,17 @@
 /** @type {const} */
 const themeColors = {
-  primary: { light: '#0a7ea4', dark: '#0a7ea4' },
-  background: { light: '#ffffff', dark: '#151718' },
-  surface: { light: '#f5f5f5', dark: '#1e2022' },
-  foreground: { light: '#11181C', dark: '#ECEDEE' },
-  muted: { light: '#687076', dark: '#9BA1A6' },
-  border: { light: '#E5E7EB', dark: '#334155' },
-  success: { light: '#22C55E', dark: '#4ADE80' },
-  warning: { light: '#F59E0B', dark: '#FBBF24' },
-  error: { light: '#EF4444', dark: '#F87171' },
+  // SmartSquash brand palette — dark: matches smartsquash.github.io, light: bright variant
+  primary:    { light: '#00b360', dark: '#00ff88' },  // neon green
+  secondary:  { light: '#00a0cc', dark: '#00c8ff' },  // cyan
+  accent:     { light: '#6b1fd4', dark: '#7b2fff' },  // purple
+  background: { light: '#f0f8f4', dark: '#080c14' },  // deep navy / light mint
+  surface:    { light: '#ffffff', dark: '#0d1420' },   // card dark / white
+  foreground: { light: '#080c14', dark: '#e8f0fe' },  // near-black / light blue-white
+  muted:      { light: '#4a6070', dark: '#8a9ab5' },  // blue-gray muted
+  border:     { light: '#c8e8d8', dark: '#1a2535' },  // subtle green-tinted / dark border
+  success:    { light: '#00b360', dark: '#00ff88' },  // neon green
+  warning:    { light: '#D97706', dark: '#FBBF24' },  // amber
+  error:      { light: '#DC2626', dark: '#F87171' },  // red
 };
 
 module.exports = { themeColors };

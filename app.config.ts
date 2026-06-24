@@ -28,7 +28,7 @@ const schemeFromBundleId = `manus${timestamp}`;
 
 const env = {
   // App branding - update these values directly (do not use env vars)
-  appName: "Squash Analyzer",
+  appName: "SMARTSQUASH",
   appSlug: "squash-analyzer",
   // S3 URL of the app logo - set this to the URL returned by generate_image when creating custom logo
   // Leave empty to use the default icon from assets/images/icon.png
@@ -105,9 +105,9 @@ const config: ExpoConfig = {
         image: "./assets/images/splash-icon.png",
         imageWidth: 200,
         resizeMode: "contain",
-        backgroundColor: "#ffffff",
+        backgroundColor: "#080c14",
         dark: {
-          backgroundColor: "#000000",
+          backgroundColor: "#080c14",
         },
       },
     ],
@@ -124,6 +124,11 @@ const config: ExpoConfig = {
   experiments: {
     typedRoutes: true,
     reactCompiler: true,
+  },
+  extra: {
+    eas: {
+      projectId: "d0183bd2-07e8-4b28-b92b-aa88d9eea8f7",
+    },
   },
 };
 
