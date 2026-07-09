@@ -9,117 +9,6 @@ import { invokeLLM } from "./_core/llm";
 import { extractAndUploadFrames, formatTimestamp, type ExtractedFrame } from "./videoFrames";
 
 /**
- * Synthesize or update a player's persistent coaching profile from new session data.
- *
- * This is called after every successful analysis that includes meeting notes.
- * It asks the LLM to merge the new session insights into the player's existing
- * profile (if any), producing an updated markdown document that will be injected
- * into future analyses for this player.
- */
-export async function synthesizePlayerProfile(
-  playerName: string,
-  meetingNotes: string,
-  analysisResults: {
-    strategyOverview?: {
-      strengths?: string[];
-      strategyUsed?: string[];
-      opponentWeaknesses?: string[];
-      strategicAdjustments?: string[];
-    } | null;
-    suggestions?: Array<{ title: string; description?: string; drill?: string | null }>;
-  },
-  existingProfile: string | null,
-): Promise<string> {
-  const suggestionsText = (analysisResults.suggestions ?? [])
-    .map((s, i) => `${i + 1}. **${s.title}**: ${s.description ?? ""}${s.drill ? ` _(Drill: ${s.drill})_` : ""}`)
-    .join("\n");
-
-  const strategyText = analysisResults.strategyOverview
-    ? [
-        analysisResults.strategyOverview.strengths?.length
-          ? `**Strengths**: ${analysisResults.strategyOverview.strengths.join("; ")}`
-          : "",
-        analysisResults.strategyOverview.strategicAdjustments?.length
-          ? `**Adjustments needed**: ${analysisResults.strategyOverview.strategicAdjustments.join("; ")}`
-          : "",
-        analysisResults.strategyOverview.opponentWeaknesses?.length
-          ? `**Opponent patterns to exploit**: ${analysisResults.strategyOverview.opponentWeaknesses.join("; ")}`
-          : "",
-      ]
-        .filter(Boolean)
-        .join("\n")
-    : "";
-
-  const prompt = `You are a squash coaching assistant. Your job is to maintain a structured, evolving coaching profile for a specific player.
-
-${existingProfile
-    ? `## Existing Coaching Profile for ${playerName}
-
-The following profile was built from previous sessions. You must PRESERVE all still-relevant insights and MERGE the new session's findings into it.
-
-${existingProfile}
-
----`
-    : `No prior profile exists for ${playerName} — create one from scratch.`}
-
-## New Session Data
-
-### Coach Meeting Notes (real-time verbal commentary):
-${meetingNotes.trim()}
-
-### AI Video Analysis — Strategy Overview:
-${strategyText || "(not available)"}
-
-### AI Video Analysis — Top Improvement Areas:
-${suggestionsText || "(not available)"}
-
----
-
-## Your Task
-
-Produce an updated, comprehensive coaching profile for **${playerName}** in Markdown.
-
-The profile should be structured as follows (use exactly these headings):
-
-# Coaching Profile: ${playerName}
-
-## Technical Patterns (recurring across sessions)
-- List recurring technical issues the coach has noted across sessions (e.g. backhand weakness, shot height)
-- Mark items that have appeared in multiple sessions with ⚡ to signal high priority
-
-## Strategic Tendencies
-- Tactical patterns and court positioning habits
-- Shot selection tendencies (both strengths and weaknesses)
-
-## Key Coaching Themes (What the coach consistently emphasises)
-- Direct quotes or paraphrases from the coach's meeting notes, across sessions
-- These are the non-negotiable focal points the coach returns to repeatedly
-
-## Opponent Exploitation (Patterns to target)
-- Specific opponent weaknesses the coach has identified
-- Cross-court vs straight shot strategies
-
-## Active Drills (most recently prescribed)
-- Drills from this session and any still-relevant drills from past sessions
-
-## Progress Notes
-- Brief session-by-session summary (newest first)
-- Note what improved, what regressed, what's new
-
-Keep the profile concise but comprehensive (under 600 words). Use bullet points. Focus on actionable coaching intelligence that will help an AI video analysis system produce better, more personalised feedback in future sessions.`;
-
-  const response = await invokeLLM({
-    messages: [
-      { role: "user", content: prompt },
-    ],
-    maxTokens: 1500,
-  });
-
-  const content = response.choices[0].message.content;
-  return typeof content === "string" ? content : JSON.stringify(content);
-}
-
-/**
  * Analyze a squash game video using AI vision
  */
 export async function analyzeSquashVideoPublic(
@@ -136,26 +25,11 @@ export async function analyzeSquashVideoPublic(
       strategicAdjustments?: string[];
     };
     suggestions?: { title: string; description?: string; drill?: string }[];
-  } | null,
-  meetingNotes?: string | null,
+  } | null
 ) {
   try {
-    // Load the player's persistent coaching profile (if any) to inject as prior context
-    let playerProfile: string | null = null;
-    let playerProfileSessionCount = 0;
-    if (playerName?.trim()) {
-      const profileRecord = await db.getPlayerProfile(playerName.trim());
-      playerProfile = profileRecord?.coachingProfile ?? null;
-      playerProfileSessionCount = profileRecord?.sessionCount ?? 0;
-      if (playerProfile) {
-        console.log(`[analysis] Loaded coaching profile for "${playerName}" (${playerProfileSessionCount} prior sessions)`);
-      }
-    }
-
     // Extract evenly-spaced frames from the full video so the AI sees the
     // entire match rather than just the first few seconds.
-    // 18 frames gives ~3× better coverage than 6 — reduces the chance that
-    // sampled frames land on breaks between games rather than active rallies.
     console.log("[analysis] Extracting frames from video:", videoUrl);
     // frameCount is now a minimum hint — videoFrames.ts dynamically picks
     // 1 frame per 3 seconds (up to 120) so the AI sees the full match.
@@ -174,14 +48,13 @@ export async function analyzeSquashVideoPublic(
     const imageContentParts = frames.map((frame, i) => ([
       {
         type: "text" as const,
-        text: `Frame ${i + 1} of ${frames.length} (at ${formatTimestamp(frame.timestampSec)} in the video${motionLabel}):`,
+        text: `Frame ${i + 1} of ${frames.length} (at ${formatTimestamp(frame.timestampSec)} in the video):`,
       },
       {
         type: "image_url" as const,
         image_url: { url: `data:image/jpeg;base64,${frame.base64}`, detail: "auto" as const },
       },
-    ];
-    }).flat();
+    ])).flat();
 
     const response = await invokeLLM({
       messages: [
@@ -193,21 +66,7 @@ ${playerName ? `Focus your analysis specifically on the player: ${playerName}${p
 
 Your task is to identify the TOP 4 most impactful improvement areas for this player, based on how frequently each problem appears across the video frames.
 
-${meetingNotes?.trim() ? `IMPORTANT: The coach recorded real-time verbal commentary during this session. The following are AI-transcribed meeting notes from that recording. These notes cover the full training session (which may include multiple matches). Use them as primary context for your analysis — they reflect what the coach observed and emphasised in person:
-
---- COACH MEETING NOTES ---
-${meetingNotes.trim()}
---- END OF MEETING NOTES ---
-
-Cross-reference these notes with what you observe in the video frames. Where the notes call out specific issues, prioritise them in your suggestions. Where you observe something the notes didn't mention, include it as an additional finding.` : ''}
-
-${playerProfile ? `PLAYER COACHING PROFILE: The following is an accumulated coaching profile for ${playerName}, synthesized from ${playerProfileSessionCount} prior session(s) with a human coach. This represents long-term coaching knowledge about this player — treat it as ground truth about their tendencies and focus areas. Use it to calibrate your observations and reinforce recurring themes:
-
-${playerProfile}
-
-Cross-reference this profile with your video observations. Where the profile predicts an issue and you observe it in the frames, emphasise it. If you observe something not in the profile, flag it as a new finding.
-
-` : ''}${coachNotes ? `IMPORTANT: A human coach has also provided structured analysis notes. You MUST incorporate these:
+${coachNotes ? `IMPORTANT: A human coach has reviewed this player and provided the following notes. You MUST take these into account and incorporate them into your analysis — they represent ground truth from an expert who has seen the player in person:
 
 Coach: ${coachNotes.coachName ?? 'Unknown'}
 ${coachNotes.coachComment ? `Overall comment: ${coachNotes.coachComment}` : ''}
@@ -233,15 +92,13 @@ For each of the 4 areas:
      e) MOVEMENT — "Player takes more than 2 steps to reach the ball after opponent hits" or "Player stands still at the T while opponent is preparing to hit"
    - Title must be 4–7 words, naming the specific body part or ball location. Example good titles: "Ball landing mid-court on drives", "No racket preparation before backhand", "Feet parallel on forehand volley", "Slow recovery to T after drop"
 
-CRITICAL — Active play only: Some frames may show game breaks (players resting between points, towelling off, changing ends, serving preparation, between-game intervals). You MUST NOT reference these frames as examples of any issue. Only reference frames that clearly show ACTIVE RALLY PLAY — the ball is in motion, both players are moving, and a rally is in progress. If a frame shows players standing still, walking back to service position, or any non-rally moment, skip it entirely for clip selection.
-
 For each suggestion, you MUST reference specific frame numbers that best illustrate the behavior:
 - "frame_index": the 1-based frame number where the behavior STARTS or is first visible
 - "end_frame_index": the 1-based frame number where the behavior ENDS or is last visible
-- "frame_indices": up to 3 frame numbers (1-based) showing the issue at DIFFERENT moments in the video — spread them across the video so the player sees the pattern recurring, not the same moment three times. ALL selected frames MUST show active rally play (not breaks).
+- "frame_indices": up to 3 frame numbers (1-based) showing the issue at DIFFERENT moments in the video — spread them across the video so the player sees the pattern recurring, not the same moment three times
 - For each entry in frame_indices, also provide a matching "frame_end_indices" array with the corresponding end frame for that clip. Each clip should be 3-8 seconds long. If you are unsure, set end frame = start frame + 1.
 
-Choose frames that together form meaningful short clips (3-8 seconds each) showing the issue during active play.
+Choose frames that together form meaningful short clips (3-8 seconds each) showing the issue.
 
 Return EXACTLY 4 suggestions (or fewer if fewer than 4 distinct issues exist), sorted by occurrence_count descending.
 
@@ -493,31 +350,7 @@ Description sentence 1: what you literally see. Sentence 2: what the correct act
     const performanceScore = analysisData.performanceScore ?? null;
     const performanceGrade = analysisData.performanceGrade ?? null;
 
-    const result = { gameStats, strategyOverview, suggestions, performanceScore, performanceGrade };
-
-    // ── Profile Synthesis ────────────────────────────────────────────────────
-    // After a successful analysis that includes coach meeting notes, synthesize
-    // (or update) the player's persistent coaching profile.  This runs async so
-    // it doesn't block the analysis result from being returned to the caller.
-    if (meetingNotes?.trim() && playerName?.trim()) {
-      setImmediate(async () => {
-        try {
-          console.log(`[profile] Synthesizing coaching profile for "${playerName}"...`);
-          const updatedProfile = await synthesizePlayerProfile(
-            playerName.trim(),
-            meetingNotes.trim(),
-            result,
-            playerProfile,
-          );
-          await db.upsertPlayerProfile(playerName.trim(), updatedProfile);
-          console.log(`[profile] Profile updated for "${playerName}"`);
-        } catch (err) {
-          console.error(`[profile] Failed to synthesize profile for "${playerName}":`, err);
-        }
-      });
-    }
-
-    return result;
+    return { gameStats, strategyOverview, suggestions, performanceScore, performanceGrade };
   } catch (error) {
     console.error("Video analysis failed:", error);
     // Re-throw with the original message so callers can surface it to the user
@@ -542,14 +375,17 @@ export const appRouter = router({
 
   videos: router({
     /**
-     * List video analyses for the authenticated user (scoped to their own videos).
+     * List video analyses for the authenticated user.
+     * TODO: restore to protectedProcedure before production.
      */
-    list: protectedProcedure.query(async ({ ctx }) => {
-      return db.getUserVideoAnalyses(ctx.user.id);
+    list: publicProcedure.query(async ({ ctx }) => {
+      // Auth temporarily disabled for testing — return all videos when unauthenticated
+      // getUserVideoAnalyses(undefined) returns all videos; with userId returns user-scoped ones
+      return db.getUserVideoAnalyses(ctx.user?.id);
     }),
 
     /**
-     * Get a single video analysis by ID (owner or admin only).
+     * Get a single video analysis by ID (accessible to owner or admin)
      */
     get: publicProcedure
       .input(z.object({ id: z.number() }))
@@ -560,9 +396,9 @@ export const appRouter = router({
       }),
 
     /**
-     * Upload a video and create analysis record (authenticated users only)
+     * Upload a video and create analysis record
      */
-    upload: protectedProcedure
+    upload: publicProcedure
       .input(
         z.object({
           title: z.string().min(1).max(255),
@@ -572,7 +408,7 @@ export const appRouter = router({
           mimeType: z.string().default("video/mp4"),
         })
       )
-      .mutation(async ({ input, ctx }) => {
+      .mutation(async ({ input }) => {
         // Convert base64 to buffer
         const videoBuffer = Buffer.from(input.videoBase64, "base64");
 
@@ -588,13 +424,12 @@ export const appRouter = router({
           input.mimeType
         );
 
-        // Create database record (scoped to authenticated user)
+        // Create database record
         const videoId = await db.createVideoAnalysis({
           title: input.title,
           playerName: input.playerName,
           playerDescription: input.playerDescription,
           videoUrl,
-          userId: ctx.user.id,
           status: "pending",
         });
 
@@ -635,13 +470,12 @@ export const appRouter = router({
           errorMessage: null,
         });
 
-        // Re-run analysis asynchronously — pass coach notes and meeting notes if available
+        // Re-run analysis asynchronously — pass coach notes if available
         analyzeSquashVideoPublic(
           existing.videoUrl,
           existing.playerName ?? undefined,
           existing.playerDescription ?? undefined,
-          (existing.coachNotes as Parameters<typeof analyzeSquashVideoPublic>[3]) ?? null,
-          existing.meetingNotes ?? null,
+          (existing.coachNotes as Parameters<typeof analyzeSquashVideoPublic>[3]) ?? null
         )
           .then(async (results) => {
             await db.updateVideoAnalysis(input.id, {
@@ -659,17 +493,15 @@ export const appRouter = router({
         return { success: true, status: "analyzing" };
       }),
 
-    /**
-     * Delete a video analysis (owner or admin only)
+     /**
+     * Delete a video analysis
+     * TODO: restore to protectedProcedure before production.
      */
-    delete: protectedProcedure
+    delete: publicProcedure
       .input(z.object({ id: z.number() }))
-      .mutation(async ({ input, ctx }) => {
+      .mutation(async ({ input }) => {
         const video = await db.getVideoAnalysis(input.id);
         if (!video) throw new Error("Video not found");
-        if (video.userId !== ctx.user.id && ctx.user.role !== "admin") {
-          throw new Error("Not authorized to delete this video");
-        }
         await db.deleteVideoAnalysis(input.id);
         return { success: true };
       }),
@@ -732,74 +564,6 @@ export const appRouter = router({
       .input(z.object({ token: z.string() }))
       .query(async ({ input }) => {
         return db.getVideoAnalysisByShareToken(input.token);
-      }),
-  }),
-
-  // ─── Player Profiles ──────────────────────────────────────────────────────────
-  players: router({
-    /**
-     * Get the coaching profile for a specific player (by name).
-     * Available to coaches and admins.
-     */
-    getProfile: protectedProcedure
-      .input(z.object({ playerName: z.string() }))
-      .query(async ({ input, ctx }) => {
-        if (ctx.user.role !== "coach" && ctx.user.role !== "admin") {
-          throw new Error("Only coaches and admins can view player profiles");
-        }
-        return db.getPlayerProfile(input.playerName);
-      }),
-
-    /**
-     * List all player coaching profiles (coaches and admins).
-     */
-    listProfiles: protectedProcedure.query(async ({ ctx }) => {
-      if (ctx.user.role !== "coach" && ctx.user.role !== "admin") {
-        throw new Error("Only coaches and admins can list player profiles");
-      }
-      return db.listPlayerProfiles();
-    }),
-
-    /**
-     * Manually trigger a profile synthesis pass for a player, using all their
-     * past videos that have meeting notes.  Useful for bootstrapping the profile
-     * from historical data without waiting for a new analysis run.
-     * Admin only.
-     */
-    synthesizeProfile: protectedProcedure
-      .input(z.object({ playerName: z.string() }))
-      .mutation(async ({ input, ctx }) => {
-        if (ctx.user.role !== "admin") throw new Error("Admin only");
-
-        // Fetch all videos for this player that have meeting notes
-        const allVideos = await db.getUserVideoAnalyses();
-        const playerVideos = allVideos.filter(
-          (v) =>
-            v.playerName?.toLowerCase() === input.playerName.toLowerCase() &&
-            v.meetingNotes?.trim() &&
-            v.status === "complete",
-        );
-
-        if (playerVideos.length === 0) {
-          throw new Error(`No completed videos with meeting notes found for player "${input.playerName}"`);
-        }
-
-        // Re-synthesize the profile from scratch using all available sessions
-        let profile: string | null = null;
-        for (const video of playerVideos) {
-          profile = await synthesizePlayerProfile(
-            input.playerName,
-            video.meetingNotes!,
-            (video.analysisResults as Parameters<typeof synthesizePlayerProfile>[2]) ?? {},
-            profile,
-          );
-        }
-
-        if (profile) {
-          await db.upsertPlayerProfile(input.playerName, profile);
-        }
-
-        return { success: true, sessionsProcessed: playerVideos.length, profile };
       }),
   }),
 

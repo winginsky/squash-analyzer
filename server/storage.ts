@@ -84,9 +84,6 @@ export async function storagePutFile(
   return { key, url: getPublicUrl(key) };
 }
 
-/**
- * Get a public URL for an existing S3 object.
- */
 export async function storageGet(relKey: string): Promise<{ key: string; url: string }> {
   const key = normalizeKey(relKey);
   return { key, url: getPublicUrl(key) };

@@ -22,7 +22,6 @@ import { SquashBall } from "@/components/squash-ball";
 import { useColors } from "@/hooks/use-colors";
 import { useAuthContext } from "@/lib/auth-provider";
 import Svg, { Polyline } from "react-native-svg";
-import { SmartSquashLogo } from "@/components/smartsquash-logo";
 
 type VideoAnalysis = {
   id: string;
@@ -75,7 +74,6 @@ export default function HomeScreen() {
   const [analyzingVideoId, setAnalyzingVideoId] = useState<number | null>(null);
   const [analysisProgress, setAnalysisProgress] = useState<{ step: string; pct: number } | null>(null);
   const webFileInputRef = useRef<HTMLInputElement | null>(null);
-  const notesFileInputRef = useRef<HTMLInputElement | null>(null);
 
   // ── Video list state ──────────────────────────────────────────
   const { data: videosData, isLoading, refetch } = trpc.videos.list.useQuery(
@@ -86,12 +84,6 @@ export default function HomeScreen() {
     onSuccess: () => refetch(),
   });
   const handleDeleteFailed = (id: string, title: string) => {
-    if (Platform.OS === "web") {
-      if (window.confirm(`Delete "${title}"? This cannot be undone.`)) {
-        deleteVideo.mutate({ id: parseInt(id, 10) });
-      }
-      return;
-    }
     Alert.alert(
       "Delete Session",
       `Delete "${title}"? This cannot be undone.`,
@@ -303,47 +295,6 @@ export default function HomeScreen() {
       setUploadProgress(`\u274c ${msg}`);
     } finally { setUploading(false); }
   };
-  // ── Meeting notes helpers ─────────────────────────────────────
-  const handleNotesFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setMeetingNotesFileName(file.name);
-    const text = await file.text();
-    setMeetingNotes(text);
-    setMeetingNotesUrl("");
-    setMeetingNotesUrlError("");
-    setNotesExpanded(true);
-  };
-
-  const handleFetchNotesUrl = async () => {
-    const url = meetingNotesUrl.trim();
-    if (!url) return;
-
-    // Support Google Docs: extract document ID and use export URL
-    const gdocMatch = url.match(/docs\.google\.com\/document\/d\/([a-zA-Z0-9_-]+)/);
-    if (gdocMatch) {
-      const docId = gdocMatch[1];
-      const exportUrl = `https://docs.google.com/document/d/${docId}/export?format=txt`;
-      setFetchingNotes(true);
-      setMeetingNotesUrlError("");
-      try {
-        const res = await fetch(exportUrl);
-        if (!res.ok) throw new Error(`Could not fetch doc (${res.status}) — make sure it's set to "Anyone with the link can view"`);
-        const text = await res.text();
-        setMeetingNotes(text.trim());
-        setMeetingNotesFileName(`Google Doc (${docId.slice(0, 8)}…)`);
-        setNotesExpanded(true);
-      } catch (err: any) {
-        setMeetingNotesUrlError(err.message ?? "Failed to fetch Google Doc");
-      } finally {
-        setFetchingNotes(false);
-      }
-      return;
-    }
-
-    setMeetingNotesUrlError("Only Google Doc links are supported. Share the doc as 'Anyone with the link can view'.");
-  };
-
   const handleUpload = async () => {
     if (!videoUri || !title) return;
     setUploading(true);
@@ -351,6 +302,7 @@ export default function HomeScreen() {
     try {
       // Use the stored File object directly if available (avoids fetch(objectURL)
       // failures for .mov / video/quicktime files in some browsers).
+      // Fall back to fetching the object URL for any edge case where File is missing.
       let fileToUpload: File | Blob;
       if (videoFile) {
         fileToUpload = videoFile;
@@ -466,10 +418,6 @@ export default function HomeScreen() {
       setTitle("");
       setPlayerName("");
       setPlayerDescription("");
-      setMeetingNotes("");
-      setMeetingNotesFileName("");
-      setMeetingNotesUrl("");
-      setNotesExpanded(false);
       setUploadProgress("");
       refetch();
     } catch (err) {
@@ -496,8 +444,8 @@ export default function HomeScreen() {
   const renderVideoCard = ({ item }: { item: VideoAnalysis }) => (
     <View style={{ marginBottom: 16 }}>
       <Pressable
-        onPress={() => router.push(`/video/${item.id}` as any)}
-        style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
+        onPress={item.status === "failed" ? undefined : () => router.push(`/video/${item.id}` as any)}
+        style={({ pressed }) => ({ opacity: (pressed && item.status !== "failed") ? 0.7 : 1 })}
       >
         <View
           style={{
@@ -610,24 +558,14 @@ export default function HomeScreen() {
     <ScreenContainer>
       {/* Hidden web file input */}
       {Platform.OS === "web" && (
-        <>
-          {/* @ts-ignore */}
-          <input
-            ref={webFileInputRef}
-            type="file"
-            accept="video/*"
-            style={{ display: "none" }}
-            onChange={handleWebFileChange as any}
-          />
-          {/* @ts-ignore */}
-          <input
-            ref={notesFileInputRef}
-            type="file"
-            accept=".txt,.md,.text"
-            style={{ display: "none" }}
-            onChange={handleNotesFileChange as any}
-          />
-        </>
+        // @ts-ignore
+        <input
+          ref={webFileInputRef}
+          type="file"
+          accept="video/*"
+          style={{ display: "none" }}
+          onChange={handleWebFileChange as any}
+        />
       )}
       {/* ── Analysis-complete banner ── */}
       {banner && (
@@ -705,19 +643,15 @@ export default function HomeScreen() {
               marginBottom: 4,
             }}
           >
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-              <SmartSquashLogo size={32} />
-              <Text
-                style={{
-                  fontSize: 20,
-                  fontWeight: "800",
-                  color: colors.primary,
-                  letterSpacing: 2,
-                }}
-              >
-                SMARTSQUASH
-              </Text>
-            </View>
+            <Text
+              style={{
+                fontSize: 28,
+                fontWeight: "700",
+                color: colors.foreground,
+              }}
+            >
+              Squash Analyzer
+            </Text>
             {/* User avatar / logout button */}
             <TouchableOpacity
               onPress={() => router.push("/profile" as any)}
@@ -1085,16 +1019,19 @@ export default function HomeScreen() {
               {uploading ? (
                 <ActivityIndicator color={colors.background} />
               ) : (
-                <Text
-                  style={{
-                    fontWeight: "600",
-                    fontSize: 16,
-                    color:
-                      (inputMode === "file" ? !videoUri : !videoUrl.trim()) || !title ? colors.muted : colors.background,
-                  }}
-                >
-                  {meetingNotes.trim() ? "🎾 Analyze with Coach Notes" : "🎾 Analyze Video"}
-                </Text>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  <SquashBall size={18} />
+                  <Text
+                    style={{
+                      fontWeight: "600",
+                      fontSize: 16,
+                      color:
+                        (inputMode === "file" ? !videoUri : !videoUrl.trim()) || !title ? colors.muted : colors.background,
+                    }}
+                  >
+                    Analyze Video
+                  </Text>
+                </View>
               )}
             </TouchableOpacity>
 

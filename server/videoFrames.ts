@@ -25,24 +25,12 @@ const execFileAsync = promisify(execFile);
 export interface ExtractedFrame {
   /** 0-based index of this frame */
   index: number;
-  /** Public S3 / CloudFront URL of the JPEG image (for display in the UI) */
+  /** Public S3 URL of the JPEG image */
   url: string;
   /** Base64-encoded JPEG data for passing directly to AI (avoids CloudFront auth issues) */
   base64: string;
   /** Timestamp in seconds within the video where this frame was taken */
   timestampSec: number;
-  /**
-   * Base64-encoded JPEG data (no data-URI prefix).
-   * Included so callers can send the image inline to LLM APIs instead of
-   * relying on the CDN URL being reachable from the model's servers.
-   */
-  base64?: string;
-  /**
-   * Relative motion score (JPEG size / average JPEG size across all frames).
-   * Values > 1.0 indicate above-average motion (likely active play).
-   * Values < 0.7 suggest low motion (possible game break or static scene).
-   */
-  motionScore?: number;
 }
 
 /**
@@ -142,17 +130,7 @@ export async function extractAndUploadFrames(
 
 /**
  * Internal: extract frames from a local video file and upload to S3.
- *
- * To avoid selecting frames that fall during game breaks (between games,
- * between points, towelling-off, etc.), we split the video into `frameCount`
- * equal segments and within each segment extract CANDIDATES_PER_SEGMENT frames
- * at evenly-spaced sub-positions. We then pick the candidate with the largest
- * JPEG file size — a reliable proxy for motion activity, since JPEG compression
- * is less effective on high-motion frames (blurry players, fast movement) than
- * on static scenes (players standing still during a break).
  */
-const CANDIDATES_PER_SEGMENT = 3; // how many candidate timestamps to try per segment
-
 async function extractFramesFromLocalFile(
   videoPath: string,
   frameCount: number,
